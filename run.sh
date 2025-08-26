@@ -2,7 +2,7 @@
 set -eu
 
 # Default values
-DEFAULT_OS_VERSION="rockylinux9"
+DEFAULT_OS_VERSION="rockylinux9.6"
 DEFAULT_TIMEZONE_VAR="Asia/Seoul"
 DEFAULT_PIP_INDEX_URL_VAR="https://pypi.org/simple"
 BUILD_ONLY="false"
@@ -18,9 +18,9 @@ PIP_INDEX_URL_VAR="${PIP_INDEX_URL_VAR:-$DEFAULT_PIP_INDEX_URL_VAR}"
 
 # Function to display help message
 function usage() {
-    echo "Usage: $0 [-o <os_version>] [-c <codebase_version>] [-b] [-m]"
+#    echo "Usage: $0 [-o <os_version>] [-c <codebase_version>] [-b] [-m]"
 #    echo "  -c  Codebase version (valid values: main, or determined from release zip file name)"
-    echo "  -t  Timezone (default: America/Los_Angeles, or set via TIMEZONE_VAR environment variable)"
+    echo "Usage: $0  -t  Timezone (default: America/Los_Angeles, or set via TIMEZONE_VAR environment variable)"
     echo "  -p  Python Package Index (PyPI) (default: https://pypi.org/simple, or set via PIP_INDEX_URL_VAR environment variable)"
     echo "  -b  Build only, do not run the container (default: false, or set via BUILD_ONLY environment variable)"
     echo "  -m  Multinode, this creates a multinode (multi-container) Cloudberry cluster using docker compose (requires compose to be installed)"
@@ -31,7 +31,7 @@ function usage() {
 while getopts "o:c:t:p:bmh" opt; do
     case "${opt}" in
         o)
-            OS_VERSION=${OPTARG}
+            OS_VERSION="rockylinux9.6"
             ;;    
         c)
             CODEBASE_VERSION="main"
