@@ -14,6 +14,7 @@ if ! sudo /usr/sbin/sshd; then
     echo "Failed to start SSH daemon" >&2
     exit 1
 fi
+
 # ----------------------------------------------------------------------
 # Remove /run/nologin to allow logins
 # ----------------------------------------------------------------------
@@ -65,17 +66,7 @@ if [[ $MULTINODE == "false" && $HOSTNAME == "cdw" ]]; then
                  --max_connections=100
 # Initialize multi node Cloudberry cluster
 elif [[ "$MULTINODE" == "true" && "$HOSTNAME" == "cdw" ]]; then
-
   set -euo pipefail
-
-  # Ensure segment hostnames are resolvable in /etc/hosts
-  # Replace the IPs below with the correct ones for your Docker network if needed
-  declare -A HOST_IPS=( [sdw1]="10.5.0.11" [sdw2]="10.5.0.12" [scdw]="10.5.0.13" )
-  for h in sdw1 sdw2 scdw; do
-    if ! grep -q " $h$" /etc/hosts; then
-      echo "${HOST_IPS[$h]} $h" | sudo tee -a /etc/hosts > /dev/null
-    fi
-  done
 
   # 0) Make sure Cloudberry env is in PATH
   #source /usr/local/cloudberry-db/greenplum_path.sh
@@ -123,12 +114,12 @@ if [ $HOSTNAME == "cdw" ]; then
      cat <<-'EOF'
 
 ======================================================================
-    ____ _                 _ _                          
-   / ___| | ___  _   _  __| | |__   ___ _ __ _ __ _   _  
-  | |   | |/ _ \| | | |/ _` | '_ \ / _ \ '__| '__| | | |
-  | |___| | (_) | |_| | (_| | |_) |  __/ |  | |  | |_| |
-   \____|_|\___/ \__,_|\__,_|_.__/ \___|_|  |_|   \__, |
-                                                  |___/
+	  ____ _                 _ _                          
+	 / ___| | ___  _   _  __| | |__   ___ _ __ _ __ _   _  
+	| |   | |/ _ \| | | |/ _` | '_ \ / _ \ '__| '__| | | |
+	| |___| | (_) | |_| | (_| | |_) |  __/ |  | |  | |_| |
+	 \____|_|\___/ \__,_|\__,_|_.__/ \___|_|  |_|   \__, |
+	                                                |___/
 ======================================================================
 EOF
 
