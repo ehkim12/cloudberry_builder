@@ -85,8 +85,8 @@ RUN     dnf makecache && \
     dnf install -y --enablerepo=epel \
     xerces-c-devel
 
-RUN     cp /tmp/90-cbdb-sysctl.conf /etc/sysctl.conf && \
-    cp /tmp/90-cbdb-limits.conf /etc/security/limits.d/90-cbdb-limits.conf && \
+RUN     cp /tmp/cbdb-sysctl.conf /etc/sysctl.conf && \
+    cp /tmp/cbdb-limits.conf /etc/security/limits.d/cbdb-limits.conf && \
     cat /usr/share/zoneinfo/${TIMEZONE_VAR} > /etc/localtime && \
     echo "cdw" > /tmp/gpdb-hosts && \
     echo "/usr/local/lib" >> /etc/ld.so.conf && \
