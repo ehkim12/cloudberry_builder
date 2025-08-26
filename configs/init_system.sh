@@ -14,7 +14,6 @@ if ! sudo /usr/sbin/sshd; then
     echo "Failed to start SSH daemon" >&2
     exit 1
 fi
-
 # ----------------------------------------------------------------------
 # Remove /run/nologin to allow logins
 # ----------------------------------------------------------------------
