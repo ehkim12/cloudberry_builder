@@ -1,6 +1,3 @@
----
-title: Sandbox of Apache Cloudberry
----
 
 # Install Apache Cloudberry With Docker
 
