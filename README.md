@@ -7,7 +7,7 @@ Docker를 통해 DBMS 빌드를 수행하고, 태그를 통해 버전별 형상�
 
 
 
-## Build the Sandbox
+## 도커 패키지 빌드
 
 When building and deploying Cloudberry in Docker, you will have 2 different deployment options as well as different build options.
 
@@ -21,49 +21,20 @@ When building and deploying Cloudberry in Docker, you will have 2 different depl
 1. Compile with the source code of the latest Apache Cloudberry (released in [Apache Cloudberry Release Page](https://github.com/apache/cloudberry/releases)). The base OS will be Rocky Linux 9 Docker image.
 2. Method 2 - Compile with the latest Apache Cloudberry [main](https://github.com/apache/cloudberry/tree/main) branch. The base OS will be Rocky Linux 9 Docker image.
 
-Build and deploy steps:
+- single container
 
-1. Start Docker Desktop and make sure it is running properly on your host platform.
+```shell
+cd bootcamp/000-cbdb-sandbox
+./run.sh
+```
+- multiple container
 
-2. Download this repository (https://github.com/ehkim12/cloudberry_builder/) to the target machine.
+```shell
+cd bootcamp/000-cbdb-sandbox
+./run.sh -m
+```
 
-    ```shell
-    git clone https://github.com/ehkim12/cloudberry_builder.git
-    ```
-
-3. Enter the repository and run the `run.sh` script to start the Docker container. This will start the automatic installation process. Depending on your environment, you may need to run this with 'sudo' command.
-
-    - For latest Cloudberry DB release running on a single container
-
-    ```shell
-    cd bootcamp/000-cbdb-sandbox
-    ./run.sh
-    ```
-    - For latest Cloudberry DB release running across multiple containers
-
-    ```shell
-    cd bootcamp/000-cbdb-sandbox
-    ./run.sh -m
-    ```
-    - For latest main branch running on a single container
-
-    ```shell
-    cd bootcamp/000-cbdb-sandbox
-    ./run.sh -c main
-    ```
-
-    - For latest main branch running across multiple containers
-
-    ```shell
-    cd bootcamp/000-cbdb-sandbox
-    ./run.sh -c main -m
-    ```
-
-    Once the script finishes without error, the sandbox is built and running successfully. The `docker run` and `docker compose` commands use the --detach option allowing you to ssh or access the running CBDB instance remotely.
-
-    Please review run.sh script for additional options (e.g. setting Timezone in running container, only building container). You can also execute `./run.sh -h` to see the usage.
-
-## Connect to the database
+## 데이터베이스 연결
 
 > [!NOTE]
 > When deploying the multi-container Cloudberry environment it may take extra time for the database to initialize, so you may need to wait a few minutes before you can execute the psql prompt successfully. You can run `docker logs cbdb-cdw -f` to see the current state of the database initialization process, you'll know the process is finished when you see the "Deployment Successful" output.
