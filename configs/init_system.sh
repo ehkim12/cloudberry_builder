@@ -29,7 +29,6 @@ sudo chown -R gpadmin.gpadmin /usr/local/cloudberry-db \
                               /tmp/gpinitsystem_multinode \
                               /tmp/gpdb-hosts \
                               /tmp/multinode-gpinit-hosts \
-                              /tmp/faa.tar.gz \
                               /tmp/smoke-test.sh
 
 # ----------------------------------------------------------------------
