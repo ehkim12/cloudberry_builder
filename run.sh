@@ -6,7 +6,7 @@ DEFAULT_OS_VERSION="rockylinux9"
 DEFAULT_TIMEZONE_VAR="Asia/Seoul"
 DEFAULT_PIP_INDEX_URL_VAR="https://pypi.org/simple"
 BUILD_ONLY="false"
-MULTINODE="false"
+MULTINODE="true"
 
 # Use environment variables if set, otherwise use default values
 # Export set for some variables to be used referenced docker compose file
@@ -23,7 +23,8 @@ function usage() {
     echo "  -t  Timezone (default: America/Los_Angeles, or set via TIMEZONE_VAR environment variable)"
     echo "  -p  Python Package Index (PyPI) (default: https://pypi.org/simple, or set via PIP_INDEX_URL_VAR environment variable)"
     echo "  -b  Build only, do not run the container (default: false, or set via BUILD_ONLY environment variable)"
-    echo "  -m  Multinode, this creates a multinode (multi-container) Cloudberry cluster using docker compose (requires compose to be installed)"
+    echo "  -s  Singlenode, this creates a Singlenode (single-container)"
+#    echo "  -m  Multinode, this creates a multinode (multi-container) Cloudberry cluster using docker compose (requires compose to be installed)"
     exit 1
 }
 
@@ -45,8 +46,8 @@ while getopts "o:c:t:p:bmh" opt; do
         b)
             BUILD_ONLY="true"
             ;;
-        m)
-            MULTINODE="true"
+        s)
+            MULTINODE="false"
             ;;
         h)
             usage
