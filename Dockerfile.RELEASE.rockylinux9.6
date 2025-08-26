@@ -1,9 +1,9 @@
 FROM rockylinux/rockylinux:9.6
 
-#ARG CODEBASE_VERSION_VAR=${CODEBASE_VERSION_VAR}
-ARG CODEBASE_VERSION_VAR="2.0.0"
+# Argument for configuring the timezone
 ARG TIMEZONE_VAR="Asia/Seoul"
 
+# Environment variables
 ENV container=docker
 ENV MULTINODE=false
 
@@ -23,65 +23,81 @@ RUN [ -d /lib/systemd/system/sysinit.target.wants ] && find /lib/systemd/system/
 
 COPY ./configs/* /tmp/
 
-RUN     echo root:cbdb@123 | chpasswd && \
-        dnf makecache && \
-        dnf install -y yum-utils \
-        epel-release \
-        git && \
-        yum-config-manager --disable epel-cisco-openh264 && \
-        dnf makecache && \
-        yum-config-manager --disable epel && \
-        dnf install -y --enablerepo=epel \
-        the_silver_searcher \
-        bat \
-        htop && \
-        dnf install -y bison \
-        cmake3 \
-        ed \
-        flex \
-        gcc \
-        gcc-c++ \
-        glibc-langpack-en \
-        go \
-        initscripts \
-        iproute \
-        less \
-        m4 \
-        net-tools \
-        openssh-clients \
-        openssh-server \
-        passwd \
-        perl \
-        rsync \
-        sudo \
-        tar \
-        unzip \
-        util-linux-ng \
-        wget \
+# enable EPEL and CRB once
+RUN dnf -y install epel-release && dnf config-manager --set-enabled crb
+
+# your existing deps + sshpass
+RUN dnf -y install \
+        git gcc gcc-c++ make cmake bison flex pkgconfig \
+        libicu libicu-devel libxml2 libxml2-devel lz4 lz4-devel \
+        openssl openssl-devel krb5-libs krb5-devel openldap openldap-devel \
+        pam pam-devel readline readline-devel zlib zlib-devel \
+        perl-ExtUtils-Embed python3 python3-devel libevent libevent-devel \
+        xerces-c xerces-c-devel \
         sshpass \
-        which && \
-        dnf install -y apr-devel \
-        bzip2-devel \
-        krb5-devel \
-        libcurl-devel \
-        libevent-devel \
-        libxml2-devel \
-        libzstd-devel \
-        openldap-devel \
-        openssl-devel \
-        pam-devel \
-        perl-ExtUtils-Embed \
-        perl-Test-Simple \
-        perl-core \
-        python3-devel \
-        readline-devel \
-        zlib-devel && \
-        dnf install -y --enablerepo=crb \
-        libuv-devel \
-        libyaml-devel \
-        perl-IPC-Run && \
-        dnf install -y --enablerepo=epel \
-        xerces-c-devel
+        && dnf clean all
+
+RUN      dnf install -y --allowerasing sudo git && \
+        dnf install -y --allowerasing apr-devel bison bzip2-devel curl cmake3 diffutils flex gcc gcc-c++ \
+        glibc-langpack-en glibc-locale-source iproute krb5-devel libcurl-devel libevent-devel \
+        libxml2-devel libuuid-devel libzstd-devel lz4-devel net-tools openldap-devel \
+        openssl-devel openssh-server pam-devel perl perl-ExtUtils-Embed perl-Test-Simple \
+        perl-Env python3-devel python3-pip readline-devel rsync wget which zlib-devel && \
+        dnf install -y --allowerasing gcc gcc-c++ make flex bison \
+        readline-devel zlib-devel openssl-devel \
+        libxml2-devel libicu-devel pam-devel perl-devel python3-devel && \
+        dnf groupinstall "Development Tools" -y && \
+        dnf install -y --allowerasing bison flex readline-devel zlib-devel \
+        openssl-devel libcurl-devel apr-devel perl-ExtUtils-Embed \
+        python3-devel cmake gcc-c++ && \
+        dnf install -y golang && \
+        dnf install -y --enablerepo=crb --allowerasing libuv-devel libyaml-devel perl-IPC-Run protobuf-devel
+
+
+# RUN XERCES_LATEST_RELEASE=3.3.0 && \
+#    XERCES_INSTALL_PREFIX="/usr/local/xerces-c" && \
+#  wget -nv "https://dlcdn.apache.org//xerces/c/3/sources/xerces-c-${XERCES_LATEST_RELEASE}.tar.gz" && \
+#   echo "$(curl -sL https://dlcdn.apache.org//xerces/c/3/sources/xerces-c-${XERCES_LATEST_RELEASE}.tar.gz.sha256)" | sha256sum -c -  && \
+#   tar xf "xerces-c-${XERCES_LATEST_RELEASE}.tar.gz" && \
+#   rm "xerces-c-${XERCES_LATEST_RELEASE}.tar.gz" && \
+#   cd xerces-c-${XERCES_LATEST_RELEASE} && \
+#   ./configure --prefix="${XERCES_INSTALL_PREFIX}-${XERCES_LATEST_RELEASE}" && \
+#    make -j$(nproc) && \
+#    sudo make install && \
+#    sudo ln -s ${XERCES_INSTALL_PREFIX}-${XERCES_LATEST_RELEASE} ${XERCES_INSTALL_PREFIX}
+
+
+
+# Build & install Xerces-C 3.3.0 into /usr/local (lib64 on Rocky)
+ARG XERCES_VER=3.3.0
+RUN set -eux; \
+        cd /tmp; \
+        curl -fsSL https://archive.apache.org/dist/xerces/c/3/sources/xerces-c-${XERCES_VER}.tar.gz -o xerces-c.tar.gz; \
+        tar xzf xerces-c.tar.gz; \
+        cmake -S xerces-c-${XERCES_VER} -B build-xerces \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DCMAKE_INSTALL_LIBDIR=lib64 \
+        -DBUILD_SHARED_LIBS=ON; \
+        cmake --build build-xerces -j"$(nproc)"; \
+        cmake --install build-xerces; \
+        ldconfig; \
+        # sanity checks (fail early if headers/libs aren't present)
+        test -r /usr/local/include/xercesc/sax2/DefaultHandler.hpp; \
+        test -r /usr/local/include/xercesc/util/XMLString.hpp; \
+        test -r /usr/local/lib64/libxerces-c.so
+
+# Toolchain & flags for Cloudberry build
+ENV CC=/usr/bin/cc \
+        CXX=/usr/bin/g++ \
+        CFLAGS="-O3 -ftree-vectorize -Wno-suggest-attribute=format -Wno-missing-prototypes -Wno-error=cast-function-type" \
+        CXXFLAGS="-O3 -ftree-vectorize -Wno-suggest-attribute=format -Wno-error" \
+        CPPFLAGS="-I/usr/local/include" \
+        LDFLAGS="-L/usr/local/lib64 -L/usr/local/lib -Wl,-rpath=/usr/local/lib64 -Wl,-rpath=/usr/local/lib" \
+        PKG_CONFIG_PATH="/usr/local/lib64/pkgconfig:/usr/local/lib/pkgconfig:${PKG_CONFIG_PATH}"
+
+
+
+
 
 RUN     cp /tmp/90-cbdb-sysctl.conf /etc/sysctl.conf && \
         cp /tmp/90-cbdb-limits.conf /etc/security/limits.d/90-cbdb-limits.conf && \
@@ -100,35 +116,46 @@ RUN     cp /tmp/90-cbdb-sysctl.conf /etc/sysctl.conf && \
         echo "gpadmin        ALL=(ALL)       NOPASSWD: ALL" >> /etc/sudoers && \
         echo "root           ALL=(ALL)       NOPASSWD: ALL" >> /etc/sudoers && \
         echo "export COORDINATOR_DATA_DIRECTORY=/data0/database/coordinator/gpseg-1" >> /home/gpadmin/.bashrc && \
-        echo "source /usr/local/cloudberry-db/greenplum_path.sh"                >> /home/gpadmin/.bashrc && \
+        #echo "source /usr/local/cloudberry-db/greenplum_path.sh"                >> /home/gpadmin/.bashrc && \
+        echo "source /usr/local/cloudberry-db/cloudberry-env.sh"                >> /home/gpadmin/.bashrc && \
         mkdir -p /data0/database/coordinator /data0/database/primary /data0/database/mirror && \
         chown -R gpadmin:gpadmin /data0 && \
         ssh-keygen -A && \
         echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
 
+
 RUN     cd /tmp/ && \
         unzip -d /tmp /tmp/cloudberrydb-${CODEBASE_VERSION_VAR}.zip && \
         mv /tmp/cloudberrydb-${CODEBASE_VERSION_VAR} /tmp/cloudberry
 
+
+
 RUN     cd /tmp/cloudberry && \
+        LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64:/usr/local/xerces-c-3.3.0/lib:$LD_LIBRARY_PATH \
         ./configure --prefix=/usr/local/cloudberry-db \
-        --enable-cassert                  \
-        --enable-debug-extensions         \
-        --enable-ic-proxy                 \
-        --enable-mapreduce                \
-        --enable-orafce                   \
-        --enable-orca                     \
-        --enable-pxf                      \
-        --enable-tap-tests                \
-        --with-gssapi                     \
-        --with-ldap                       \
-        --with-libxml                     \
-        --with-openssl                    \
-        --with-pam                        \
-        --with-perl                       \
-        --with-pgport=5432                \
-        --with-python                     \
-        --with-pythonsrc-ext
+        --enable-pxf \
+        --enable-debug-extensions \
+        --enable-ic-proxy \
+        --enable-openssl-redirect \
+        --enable-orca \
+        --enable-pax \
+        --with-gssapi \
+        --with-icu \
+        --with-ldap \
+        --with-libxml \
+        --with-lz4 \
+        --with-openssl \
+        --with-pam \
+        --with-perl \
+        --with-pgport=5432 \
+        --with-python \
+        --with-pythonsrc-ext \
+        --with-ssl=openssl
+
+
+RUN cd /tmp/cloudberry/contrib/pax_storage && \
+        rm -rf build
+
 
 RUN     cd /tmp/cloudberry && \
         make -j$(nproc) && \
@@ -137,6 +164,15 @@ RUN     cd /tmp/cloudberry && \
 RUN     cd /tmp/cloudberry/contrib && \
         make -j$(nproc) && \
         make install
+
+RUN     cd /tmp/cloudberry/gpcontrib && \
+        make -j$(nproc) && \
+        make install
+
+
+#RUN cd /tmp/cloudberry  && \
+#    make -C gpMgmt clean all install  -- 관리자 툴만 설치
+
 
 # ----------------------------------------------------------------------
 # Set the Default User and Command

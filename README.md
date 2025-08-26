@@ -15,7 +15,6 @@ When building and deploying Cloudberry in Docker, you will have 2 different depl
 1. **Single Container** (Default) - With the single container option, you will have the coordinator as well as the Cloudberry segments all running on a single container. This is the default behavior when deploying using the `run.sh` script provided.
 2. **Multi-Container** - Deploying with the multi-container option will give you a more realistic deployment of what actual production Cloudberry clusters look like. With multi-node, you will have the coordinator, the standby coordinator, and 2 segment hosts all on their own respective containers. This is to both highlight the distributed nature of Apache Cloudberry as well as highlight how high availability (HA) features work in the event of a server (or in this case a container) failing. This is enabled by passing the -m flag to the `run.sh` script which will be highlighted below.
 
-![cloudberry Sandbox Deployments](../images/sandbox-deployment.jpg)
 
 **Build Options**
 
@@ -26,10 +25,10 @@ Build and deploy steps:
 
 1. Start Docker Desktop and make sure it is running properly on your host platform.
 
-2. Download this repository (which is [apache/cloudberry-bootcamp](https://github.com/apache/cloudberry-bootcamp)) to the target machine.
+2. Download this repository (https://github.com/ehkim12/cloudberry_builder/) to the target machine.
 
     ```shell
-    git clone https://github.com/apache/cloudberry-bootcamp.git
+    git clone https://github.com/ehkim12/cloudberry_builder.git
     ```
 
 3. Enter the repository and run the `run.sh` script to start the Docker container. This will start the automatic installation process. Depending on your environment, you may need to run this with 'sudo' command.
