@@ -26,17 +26,14 @@ When building and deploying Cloudberry in Docker, you will have 2 different depl
 
 **Build Options**
 
-1. Compile with the source code of the latest Apache Cloudberry (released in [Apache Cloudberry Release Page](https://github.com/apache/cloudberry/releases)). The base OS will be Rocky Linux 9 Docker image.
-2. Method 2 - Compile with the latest Apache Cloudberry [main](https://github.com/apache/cloudberry/tree/main) branch. The base OS will be Rocky Linux 9 Docker image.
-
 Build and deploy steps:
 
 1. Start Docker Desktop and make sure it is running properly on your host platform.
 
-2. Download this repository (which is [apache/cloudberry-bootcamp](https://github.com/apache/cloudberry-bootcamp)) to the target machine.
+2. Download this repository (https://github.com/ehkim12/cloudberry_builder) to the target machine.
 
     ```shell
-    git clone https://github.com/apache/cloudberry-bootcamp.git
+    git clone https://github.com/ehkim12/cloudberry_builder.git
     ```
 
 3. Enter the repository and run the `run.sh` script to start the Docker container. This will start the automatic installation process. Depending on your environment, you may need to run this with 'sudo' command.
