@@ -47,27 +47,12 @@ Build and deploy steps:
     - For latest Cloudberry DB release running on a single container
 
     ```shell
-    cd bootcamp/000-cbdb-sandbox
-    ./run.sh
+    ./run.sh -s
     ```
     - For latest Cloudberry DB release running across multiple containers
 
     ```shell
-    cd bootcamp/000-cbdb-sandbox
-    ./run.sh -m
-    ```
-    - For latest main branch running on a single container
-
-    ```shell
-    cd bootcamp/000-cbdb-sandbox
-    ./run.sh -c main
-    ```
-
-    - For latest main branch running across multiple containers
-
-    ```shell
-    cd bootcamp/000-cbdb-sandbox
-    ./run.sh -c main -m
+    ./run.sh 
     ```
 
     Once the script finishes without error, the sandbox is built and running successfully. The `docker run` and `docker compose` commands use the --detach option allowing you to ssh or access the running CBDB instance remotely.
