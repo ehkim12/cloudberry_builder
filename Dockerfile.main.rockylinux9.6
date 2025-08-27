@@ -53,7 +53,6 @@ RUN      dnf install -y --allowerasing sudo git && \
     dnf install -y golang && \
     dnf install -y --enablerepo=crb --allowerasing libuv-devel libyaml-devel perl-IPC-Run protobuf-devel
 
-
 # Build & install Xerces-C 3.3.0 into /usr/local (lib64 on Rocky)
 ARG XERCES_VER=3.3.0
 RUN set -eux; \
@@ -81,10 +80,6 @@ ENV CC=/usr/bin/cc \
     LDFLAGS="-L/usr/local/lib64 -L/usr/local/lib -Wl,-rpath=/usr/local/lib64 -Wl,-rpath=/usr/local/lib" \
     PKG_CONFIG_PATH="/usr/local/lib64/pkgconfig:/usr/local/lib/pkgconfig:${PKG_CONFIG_PATH}"
 
-
-
-
-
 RUN     cp /tmp/cbdb-sysctl.conf /etc/sysctl.conf && \
     cp /tmp/cbdb-limits.conf /etc/security/limits.d/cbdb-limits.conf && \
     cat /usr/share/zoneinfo/${TIMEZONE_VAR} > /etc/localtime && \
@@ -109,17 +104,12 @@ RUN     cp /tmp/cbdb-sysctl.conf /etc/sysctl.conf && \
     ssh-keygen -A && \
     echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
 
-
-
-
 RUN cd /tmp/ && \
     git clone https://github.com/apache/cloudberry.git /tmp/cloudberry  && \
     cd /tmp/cloudberry  && \
     git submodule update --init --recursive  && \
     git fetch --tags  && \
     git tag -l "2.0.0-incubating-*" 
-
-
 
 RUN     cd /tmp/cloudberry && \
     LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64:/usr/local/xerces-c-3.3.0/lib:$LD_LIBRARY_PATH \
@@ -143,10 +133,8 @@ RUN     cd /tmp/cloudberry && \
     --with-pythonsrc-ext \
     --with-ssl=openssl
 
-
 RUN cd /tmp/cloudberry/contrib/pax_storage && \
     rm -rf build
-
 
 RUN     cd /tmp/cloudberry && \
     make -j$(nproc) && \
@@ -159,7 +147,6 @@ RUN     cd /tmp/cloudberry/contrib && \
 RUN     cd /tmp/cloudberry/gpcontrib && \
     make -j$(nproc) && \
     make install
-
 
 RUN cd /tmp/cloudberry  && \
     make -C gpMgmt clean all install 
