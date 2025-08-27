@@ -104,11 +104,12 @@ RUN     cp /tmp/cbdb-sysctl.conf /etc/sysctl.conf && \
         ssh-keygen -A && \
         echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
 
-RUN     cd /tmp/ && \
-        #unzip -d /tmp /tmp/cloudberry.zip 
-        tar -xzf cloudberry.tar.gz
 
-RUN     cd /tmp/cloudberry && \
+RUN cd /tmp/ && \
+        unzip -d /tmp /tmp/cloudberry.zip && \
+        chmod -R a+x /tmp/cloudberry
+
+RUN cd /tmp/cloudberry && \
         LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64:/usr/local/xerces-c-3.3.0/lib:$LD_LIBRARY_PATH \
         ./configure --prefix=/usr/local/cloudberry-db \
         --enable-pxf \
