@@ -54,20 +54,6 @@ RUN      dnf install -y --allowerasing sudo git && \
     dnf install -y --enablerepo=crb --allowerasing libuv-devel libyaml-devel perl-IPC-Run protobuf-devel
 
 
-# RUN XERCES_LATEST_RELEASE=3.3.0 && \
-#    XERCES_INSTALL_PREFIX="/usr/local/xerces-c" && \
-#  wget -nv "https://dlcdn.apache.org//xerces/c/3/sources/xerces-c-${XERCES_LATEST_RELEASE}.tar.gz" && \
-#   echo "$(curl -sL https://dlcdn.apache.org//xerces/c/3/sources/xerces-c-${XERCES_LATEST_RELEASE}.tar.gz.sha256)" | sha256sum -c -  && \
-#   tar xf "xerces-c-${XERCES_LATEST_RELEASE}.tar.gz" && \
-#   rm "xerces-c-${XERCES_LATEST_RELEASE}.tar.gz" && \
-#   cd xerces-c-${XERCES_LATEST_RELEASE} && \
-#   ./configure --prefix="${XERCES_INSTALL_PREFIX}-${XERCES_LATEST_RELEASE}" && \
-#    make -j$(nproc) && \
-#    sudo make install && \
-#    sudo ln -s ${XERCES_INSTALL_PREFIX}-${XERCES_LATEST_RELEASE} ${XERCES_INSTALL_PREFIX}
-
-
-
 # Build & install Xerces-C 3.3.0 into /usr/local (lib64 on Rocky)
 ARG XERCES_VER=3.3.0
 RUN set -eux; \
@@ -135,34 +121,6 @@ RUN cd /tmp/ && \
 
 
 
-
-# vi src/backend/access/heap/heaptoast.c 수정 후 리빌드
-#RUN  cd /tmp/cloudberry    && \
-# cp ~/heaptoast.c  src/backend/access/heap/heaptoast.c && \
-#  export CC=/usr/bin/cc && \
-#  export CXX=/usr/bin/g++ && \
-#  export CFLAGS='-O3 -ftree-vectorize -Wno-suggest-attribute=format -Wno-missing-prototypes -Wno-error=cast-function-type' && \
-# export CXXFLAGS='-O3 -ftree-vectorize -Wno-suggest-attribute=format -Wno-error' && \
-# export LDFLAGS='-static-libgcc' && \
-#  export PERL=perl && \
-#  export LD_LIBRARY_PATH=/usr/local/lib:/usr/local/xerces-c-3.3.0/lib/:$LD_LIBRARY_PATH && \
-#  export PATH=/usr/local/bin:$PATH  && \
-#  sed -i 's/-ldld/-ldl/g' configure && \
-#  export LIBS="-ldl" && \
-# export PKG_CONFIG_PATH='/usr/local/R/lib/pkgconfig:/usr/local/lib/pkgconfig:/usr/local/lib64/pkgconfig:/usr/local/share/pkgconfig:/opt/rh/rh-python38/root/usr/lib64/pkgconfig:/opt/rh/rh-ruby30/root/usr/local/lib64/pkgconfig:/opt/rh/rh-ruby30/root/usr/lib64/pkgconfig:/opt/rh/devtoolset-10/root/usr/lib64/pkgconfig:/usr/local/python/lib/pkgconfig'
-
-
-#RUN sudo cp -v /usr/local/xerces-c/lib/libxerces-c.so \
-#    /usr/local/xerces-c/lib/libxerces-c-3.*.so \
-#    /usr/local/lib
-
-
-
-
-
-
-
-
 RUN     cd /tmp/cloudberry && \
     LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64:/usr/local/xerces-c-3.3.0/lib:$LD_LIBRARY_PATH \
     ./configure --prefix=/usr/local/cloudberry-db \
@@ -206,6 +164,18 @@ RUN     cd /tmp/cloudberry/gpcontrib && \
 RUN cd /tmp/cloudberry  && \
     make -C gpMgmt clean all install 
 
+# install gpbackup/gprestore 
+ENV GOPATH="/tmp/go" \
+    GOBIN="/tmp/go/bin" \
+    PATH="/tmp/go/bin:$PATH"
+
+RUN git clone https://github.com/cloudberrydb/gpbackup.git /tmp/gpbackup && \
+    cd /tmp/gpbackup && \
+    make depend && \
+    make build && \
+    /tmp/go/bin/gpbackup --version && \
+    /tmp/go/bin/gprestore --version && \
+    ls /tmp/go/bin
 # ----------------------------------------------------------------------
 # Set the Default User and Command
 # ----------------------------------------------------------------------
