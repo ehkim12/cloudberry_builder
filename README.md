@@ -158,7 +158,6 @@ docker exec -it cbdb-cdw /bin/bash
 **Build Docker Image**
 
 The following command builds the Docker image without starting a container and saves it locally.  
-This also exports image to a `.tar.gz` file.
 
 ```shell
 ./run.sh -b

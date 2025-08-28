@@ -71,15 +71,6 @@ RUN set -eux; \
     test -r /usr/local/include/xercesc/util/XMLString.hpp; \
     test -r /usr/local/lib64/libxerces-c.so
 
-# Toolchain & flags for Cloudberry build
-ENV CC=/usr/bin/cc \
-    CXX=/usr/bin/g++ \
-    CFLAGS="-O3 -ftree-vectorize -Wno-suggest-attribute=format -Wno-missing-prototypes -Wno-error=cast-function-type" \
-    CXXFLAGS="-O3 -ftree-vectorize -Wno-suggest-attribute=format -Wno-error" \
-    CPPFLAGS="-I/usr/local/include" \
-    LDFLAGS="-L/usr/local/lib64 -L/usr/local/lib -Wl,-rpath=/usr/local/lib64 -Wl,-rpath=/usr/local/lib" \
-    PKG_CONFIG_PATH="/usr/local/lib64/pkgconfig:/usr/local/lib/pkgconfig:${PKG_CONFIG_PATH}"
-
 RUN     cp /tmp/cbdb-sysctl.conf /etc/sysctl.conf && \
     cp /tmp/cbdb-limits.conf /etc/security/limits.d/cbdb-limits.conf && \
     cat /usr/share/zoneinfo/${TIMEZONE_VAR} > /etc/localtime && \
@@ -110,6 +101,15 @@ RUN cd /tmp/ && \
     git submodule update --init --recursive  && \
     git fetch --tags  && \
     git tag -l "2.0.0-incubating-*" 
+
+# Toolchain & flags for Cloudberry build
+ENV CC=/usr/bin/cc \
+    CXX=/usr/bin/g++ \
+    CFLAGS="-O3 -ftree-vectorize -Wno-suggest-attribute=format -Wno-missing-prototypes -Wno-error=cast-function-type" \
+    CXXFLAGS="-O3 -ftree-vectorize -Wno-suggest-attribute=format -Wno-error" \
+    CPPFLAGS="-I/usr/local/include" \
+    LDFLAGS="-L/usr/local/lib64 -L/usr/local/lib -Wl,-rpath=/usr/local/lib64 -Wl,-rpath=/usr/local/lib" \
+    PKG_CONFIG_PATH="/usr/local/lib64/pkgconfig:/usr/local/lib/pkgconfig:${PKG_CONFIG_PATH}"
 
 RUN     cd /tmp/cloudberry && \
     LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64:/usr/local/xerces-c-3.3.0/lib:$LD_LIBRARY_PATH \
