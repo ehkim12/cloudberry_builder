@@ -3,7 +3,7 @@ services:
     container_name: cbdb-cdw
     image: cbdb-${CODEBASE_VERSION}:${OS_VERSION}
     ports:
-    - "15432:5432"
+      - "15432:5432"
     hostname: cdw
     tty: true
     networks:
@@ -40,6 +40,6 @@ networks:
     name: cbdb-interconnect
     driver: bridge
     ipam:
-     config:
-       - subnet: 10.5.0.0/16
-         gateway: 10.5.0.1
+      config:
+        - subnet: 10.5.0.0/16
+          gateway: 10.5.0.1

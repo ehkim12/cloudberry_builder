@@ -30,13 +30,13 @@ function usage() {
 }
 
 # Parse command-line options
-while getopts "o:c:t:p:bmh" opt; do
+while getopts "o:c:t:p:sbh" opt; do
     case "${opt}" in
         o)
             OS_VERSION=${OPTARG}
             ;;    
         c)
-            CODEBASE_VERSION="main"
+            CODEBASE_VERSION=${OPTARG}
             ;;
         t)
             TIMEZONE_VAR=${OPTARG}
@@ -46,6 +46,7 @@ while getopts "o:c:t:p:bmh" opt; do
             ;;
         b)
             BUILD_ONLY="true"
+            MULTINODE="false"
             ;;
         s)
             MULTINODE="false"
@@ -129,6 +130,8 @@ fi
 
 # Check if build only flag is set
 if [ "${BUILD_ONLY}" == "true" ]; then
+    #docker images | grep cbdb-main   # confirm it exists
+    #docker save cbdb-main:rockylinux9.6 | gzip > cbdb-main_rockylinux9.6.tar.gz
     echo "Docker image built successfully with OS version ${OS_VERSION} and codebase version ${CODEBASE_VERSION}. Build only mode, not running the container."
     exit 0
 fi

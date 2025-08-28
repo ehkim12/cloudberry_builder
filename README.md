@@ -22,7 +22,6 @@ When building and deploying Cloudberry in Docker, you will have 2 different depl
 1. **Single Container** (Default) - With the single container option, you will have the coordinator as well as the Cloudberry segments all running on a single container. This is the default behavior when deploying using the `run.sh` script provided.
 2. **Multi-Container** - Deploying with the multi-container option will give you a more realistic deployment of what actual production Cloudberry clusters look like. With multi-node, you will have the coordinator, the standby coordinator, and 2 segment hosts all on their own respective containers. This is to both highlight the distributed nature of Apache Cloudberry as well as highlight how high availability (HA) features work in the event of a server (or in this case a container) failing. This is enabled by passing the -m flag to the `run.sh` script which will be highlighted below.
 
-![cloudberry Sandbox Deployments](../images/sandbox-deployment.jpg)
 
 **Build Options**
 
@@ -36,7 +35,14 @@ Build and deploy steps:
     git clone https://github.com/ehkim12/cloudberry_builder.git
     ```
 
-3. Enter the repository and run the `run.sh` script to start the Docker container. This will start the automatic installation process. Depending on your environment, you may need to run this with 'sudo' command.
+3. Make run.sh executable
+
+    ```shell
+    cd cloudberry_builder
+    chmod +x run.sh
+    ```
+
+4. Enter the repository and run the `run.sh` script to start the Docker container. This will start the automatic installation process. Depending on your environment, you may need to run this with 'sudo' command.
 
     - For latest Cloudberry DB release running on a single container
 
@@ -84,11 +90,10 @@ You can now connect to the database and try some basic operations.
     ```sql
     gpadmin=# SELECT VERSION();  -- Checks the database version.
             
-    PostgreSQL 14.4 (Apache Cloudberry 1.0.0 build dev) on aarch64-unknown-linux-gnu, compiled by gcc (GCC) 10.2.1 20210130 (Red Hat 10.2.1-11), 64-bit compiled on Oct 24 2023 10:24:28
+    PostgreSQL 14.4 (Apache Cloudberry 2.0.0-incubating-rc3 build dev) on x86_64-pc-linux-gnu, compiled by cc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-5), 64-bit compiled on Aug 28 2025 08:54:06
     (1 row)
     ```
 
-Now you have a Apache Cloudberry and can continue with [Apache Cloudberry Tutorials Based on Docker Installation](https://github.com/apache/cloudberry-bootcamp/blob/main/101-cbdb-tutorials/README.md)! Enjoy!
 
 ## Working with your Cloudberry Docker environment
 
@@ -113,13 +118,13 @@ docker rm -f cbdb-cdw
 To stop the **multi-container** deployment while _keeping the data and state_ within the container, you can run the command below. This means that you can later start the container again and any changes you made to the containers will be persisted between runs.
 
 ```shell
-docker compose -f docker-compose-rockylinux9.yml stop
+docker compose -f docker-compose-rockylinux9.6.yml stop
 ```
 
 To stop the **multi-container** deployment and also remove the network and volumes that belong to the containers, you can run the command below. Running this command means it will delete the containers as well as remove the volumes that the containers are associated with. This means any changes you've made inside of the containers or any database state will be wiped and unrecoverable.
 
 ```shell
-docker compose -f docker-compose-rockylinux9.yml down -v
+docker compose -f docker-compose-rockylinux9.6.yml down -v
 ```
 
 **Starting A Stopped Single Container Cloudberry Docker Deployment**
@@ -137,7 +142,7 @@ docker start cbdb-cdw
 To start a **multi-container** deployment after it was shut down, you can run the following command.
 
 ```shell
-docker compose -f docker-compose-rockylinux9.yml start
+docker compose -f docker-compose-rockylinux9.6.yml start
 ```
 
 > [!NOTE]
@@ -148,3 +153,14 @@ docker exec -it cbdb-cdw /bin/bash
 
 [gpadmin@cdw /] gpstart -a
 ```
+
+
+**Build Docker Image**
+
+The following command builds the Docker image without starting a container and saves it locally.  
+This also exports image to a `.tar.gz` file.
+
+```shell
+./run.sh -b
+```
+
