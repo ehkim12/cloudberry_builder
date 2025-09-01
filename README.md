@@ -118,13 +118,13 @@ docker rm -f cbdb-cdw
 To stop the **multi-container** deployment while _keeping the data and state_ within the container, you can run the command below. This means that you can later start the container again and any changes you made to the containers will be persisted between runs.
 
 ```shell
-docker compose -f docker-compose-rockylinux9.6.yml stop
+docker compose -f docker-compose.yml stop
 ```
 
 To stop the **multi-container** deployment and also remove the network and volumes that belong to the containers, you can run the command below. Running this command means it will delete the containers as well as remove the volumes that the containers are associated with. This means any changes you've made inside of the containers or any database state will be wiped and unrecoverable.
 
 ```shell
-docker compose -f docker-compose-rockylinux9.6.yml down -v
+docker compose -f docker-compose.yml down -v
 ```
 
 **Starting A Stopped Single Container Cloudberry Docker Deployment**
@@ -142,7 +142,7 @@ docker start cbdb-cdw
 To start a **multi-container** deployment after it was shut down, you can run the following command.
 
 ```shell
-docker compose -f docker-compose-rockylinux9.6.yml start
+docker compose -f docker-compose.yml start
 ```
 
 > [!NOTE]

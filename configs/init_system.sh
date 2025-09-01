@@ -1,6 +1,7 @@
 #!/bin/bash
 ## ======================================================================
 ## Container initialization script
+MULTINODE_HOSTS_FILE="/tmp/multinode-gpinit-hosts"
 ## ======================================================================
 
 # ----------------------------------------------------------------------
@@ -53,9 +54,23 @@ chmod 600 /home/gpadmin/.ssh/authorized_keys
 ssh-keyscan -t rsa cdw > /home/gpadmin/.ssh/known_hosts 2>/dev/null
 
 # Source Cloudberry environment variables and set
-#source /usr/local/cloudberry-db/greenplum_path.sh
-source /usr/local/cloudberry-db/cloudberry-env.sh
 # COORDINATOR_DATA_DIRECTORY
+
+# Dynamically detect and source the first .sh file in /usr/local/cloudberry-db/
+#for f in /usr/local/cloudberry-db/cloudberry-env.sh \
+#         /usr/local/cloudberry-db/greenplum_path.sh; do
+#    if [ -f "$f" ]; then
+#        . "$f"
+#        break#
+#    fi
+#done
+for f in /usr/local/cloudberry-db/greenplum_path.sh; do
+    if [ -f "$f" ]; then
+        . "$f"
+        echo "source $f"                >> /home/gpadmin/.bashrc
+        break
+    fi
+done
 export COORDINATOR_DATA_DIRECTORY=/data0/database/coordinator/gpseg-1
 
 # Initialize single node Cloudberry cluster
@@ -65,42 +80,24 @@ if [[ $MULTINODE == "false" && $HOSTNAME == "cdw" ]]; then
                  -h /tmp/gpdb-hosts \
                  --max_connections=100
 # Initialize multi node Cloudberry cluster
-elif [[ "$MULTINODE" == "true" && "$HOSTNAME" == "cdw" ]]; then
-  set -euo pipefail
-
-  # 0) Make sure Cloudberry env is in PATH
-  #source /usr/local/cloudberry-db/greenplum_path.sh
-
-  # 1) Prepare gpadmin SSH key if missing
-  [[ -f ~/.ssh/id_ed25519 ]] || ssh-keygen -q -t ed25519 -N '' -f ~/.ssh/id_ed25519
-  chmod 700 ~/.ssh
-  touch ~/.ssh/known_hosts
-  chmod 600 ~/.ssh/known_hosts
-
-  # 2) Seed known_hosts to avoid authenticity prompts
-  ssh-keyscan -t ed25519 sdw1 sdw2 scdw >> ~/.ssh/known_hosts 2>/dev/null || true
-  ssh-keyscan -t rsa    sdw1 sdw2 scdw >> ~/.ssh/known_hosts 2>/dev/null || true
-
-  # 3) Copy key to segment & standby (password must match those containers)
-  PASS="cbdb@123"
-  for h in sdw1 sdw2 scdw; do
-    sshpass -p "$PASS" ssh-copy-id -o StrictHostKeyChecking=no -f "gpadmin@${h}" || {
-      echo "ERROR: ssh-copy-id to $h failed"; exit 1; }
-    # quick connectivity check
-    ssh -o BatchMode=yes "gpadmin@${h}" "echo ok from $h"
-  done
-
-  # 4) gpinitsystem with your files
-  gpinitsystem -a \
-    -c /tmp/gpinitsystem_multinode \
-    -h /tmp/multinode-gpinit-hosts \
-    --max_connections=100
-
-  # 5) Standby
-  gpinitstandby -s scdw -a
-
-  # (optional) write hosts file for later use
-  printf "sdw1\nsdw2\n" >> /tmp/gpdb-hosts
+elif [[ $MULTINODE == "true" && $HOSTNAME == "cdw" ]]; then
+    # Dynamically copy SSH key to all segment hosts listed in multinode-gpinit-hosts
+    if [ -f "$MULTINODE_HOSTS_FILE" ]; then
+          while IFS= read -r host; do
+               sshpass -p "cbdb@123" ssh-copy-id -o StrictHostKeyChecking=no "$host"
+          done < "$MULTINODE_HOSTS_FILE"
+    fi
+     # Also copy to standby coordinator if needed
+    sshpass -p "cbdb@123" ssh-copy-id -o StrictHostKeyChecking=no scdw
+    gpinitsystem -a \
+                 -c /tmp/gpinitsystem_multinode \
+                 -h /tmp/multinode-gpinit-hosts \
+                 --max_connections=100
+    gpinitstandby -s scdw -a
+     # Optionally, append all segment hosts to /tmp/gpdb-hosts
+     if [ -f "$MULTINODE_HOSTS_FILE" ]; then
+          cat "$MULTINODE_HOSTS_FILE" >> /tmp/gpdb-hosts
+     fi
 fi
 
 if [ $HOSTNAME == "cdw" ]; then

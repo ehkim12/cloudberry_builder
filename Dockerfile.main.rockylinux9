@@ -1,4 +1,4 @@
-FROM rockylinux/rockylinux:9.6
+FROM rockylinux/rockylinux:9
 
 ARG TIMEZONE_VAR="Asia/Seoul"
 
@@ -130,37 +130,24 @@ RUN cd /tmp/cloudberry && \
     --with-openssl --with-pam --with-perl --with-pgport=5432 \
     --with-python --with-pythonsrc-ext --with-ssl=openssl \
     --with-includes=/usr/local/xerces-c-${XERCES_VER}/include \
-    --with-libraries=/usr/local/xerces-c-${XERCES_VER}/lib
-
-RUN cd /tmp/cloudberry/contrib/pax_storage && \
-    rm -rf build  && \
-    cd /tmp/cloudberry && \
-    make -j$(nproc) && \
-    make install
-
-RUN     cd /tmp/cloudberry/contrib && \
-    make -j$(nproc) && \
-    make install
-
-RUN     cd /tmp/cloudberry/gpcontrib && \
-    make -j$(nproc) && \
-    make install
-
-RUN cd /tmp/cloudberry  && \
-    make -C gpMgmt clean all install 
+    --with-libraries=/usr/local/xerces-c-${XERCES_VER}/lib && \
+    make -j$(nproc) && make install && \
+    make -C contrib -j$(nproc) install && \
+    make -C gpcontrib -j$(nproc) install && \
+    make -C gpMgmt clean all install
 
 # install gpbackup/gprestore 
-ENV GOPATH="/tmp/go" \
-    GOBIN="/tmp/go/bin" \
-    PATH="/tmp/go/bin:$PATH"
+#ENV GOPATH="/tmp/go" \
+#    GOBIN="/tmp/go/bin" \
+#    PATH="/tmp/go/bin:$PATH"
 
-RUN git clone https://github.com/cloudberrydb/gpbackup.git /tmp/gpbackup && \
-    cd /tmp/gpbackup && \
-    make depend && \
-    make build && \
-    /tmp/go/bin/gpbackup --version && \
-    /tmp/go/bin/gprestore --version && \
-    ls /tmp/go/bin
+#RUN git clone https://github.com/cloudberrydb/gpbackup.git /tmp/gpbackup && \
+#    cd /tmp/gpbackup && \
+#    make depend && \
+#    make build && \
+#    /tmp/go/bin/gpbackup --version && \
+#    /tmp/go/bin/gprestore --version && \
+#    ls /tmp/go/bin
 
 
 # ----------------------------------------------------------------------

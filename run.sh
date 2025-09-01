@@ -21,7 +21,7 @@ PIP_INDEX_URL_VAR="${PIP_INDEX_URL_VAR:-$DEFAULT_PIP_INDEX_URL_VAR}"
 function usage() {
 #    echo "Usage: $0 [-o <os_version>] [-c <codebase_version>] [-b] [-m]"
 #    echo "  -c  Codebase version (valid values: main, or determined from release zip file name)"
-    echo " Usage: $0  -t  Timezone (default: America/Los_Angeles, or set via TIMEZONE_VAR environment variable)"
+    echo " Usage: $0  -t  Timezone (default: Asia/Seoul, or set via TIMEZONE_VAR environment variable)"
     echo "  -p  Python Package Index (PyPI) (default: https://pypi.org/simple, or set via PIP_INDEX_URL_VAR environment variable)"
     echo "  -b  Build only, do not run the container (default: false, or set via BUILD_ONLY environment variable)"
     echo "  -s  Singlenode, this creates a Singlenode (single-container)"
@@ -130,15 +130,13 @@ fi
 
 # Check if build only flag is set
 if [ "${BUILD_ONLY}" == "true" ]; then
-    #docker images | grep cbdb-main   # confirm it exists
-    #docker save cbdb-main:rockylinux9.6 | gzip > cbdb-main_rockylinux9.6.tar.gz
     echo "Docker image built successfully with OS version ${OS_VERSION} and codebase version ${CODEBASE_VERSION}. Build only mode, not running the container."
     exit 0
 fi
 
 # Deploy container(s)
 if [ "${MULTINODE}" == "true" ]; then
-    docker compose -f docker-compose-$OS_VERSION.yml up --detach
+    docker compose -f docker-compose.yml up --detach
 else
     docker run --interactive \
            --tty \
