@@ -19,8 +19,8 @@ Make sure that your environment meets the following requirements:
 When building and deploying Cloudberry in Docker, you will have 2 different deployment options as well as different build options.
 
 **Deployment Options**
-1. **Single Container** (Default) - With the single container option, you will have the coordinator as well as the Cloudberry segments all running on a single container. This is the default behavior when deploying using the `run.sh` script provided.
-2. **Multi-Container** - Deploying with the multi-container option will give you a more realistic deployment of what actual production Cloudberry clusters look like. With multi-node, you will have the coordinator, the standby coordinator, and 2 segment hosts all on their own respective containers. This is to both highlight the distributed nature of Apache Cloudberry as well as highlight how high availability (HA) features work in the event of a server (or in this case a container) failing. This is enabled by passing the -m flag to the `run.sh` script which will be highlighted below.
+1. **Single Container** - With the single container option, you will have the coordinator as well as the Cloudberry segments all running on a single container. This is the default behavior when deploying using the `run.sh` script provided.
+2. **Multi-Container** (Default) - Deploying with the multi-container option will give you a more realistic deployment of what actual production Cloudberry clusters look like. With multi-node, you will have the coordinator, the standby coordinator, and 2 segment hosts all on their own respective containers. This is to both highlight the distributed nature of Apache Cloudberry as well as highlight how high availability (HA) features work in the event of a server (or in this case a container) failing. This is enabled by passing the -m flag to the `run.sh` script which will be highlighted below.
 
 
 **Build Options**
@@ -155,6 +155,14 @@ docker exec -it cbdb-cdw /bin/bash
 ```
 
 
+
+
+
+
+
+
+
+
 **Build Docker Image**
 
 The following command builds the Docker image without starting a container and saves it locally.  
@@ -162,4 +170,32 @@ The following command builds the Docker image without starting a container and s
 ```shell
 ./run.sh -b
 ```
+
+**Load Docker Image**
+
+```shell
+docker load -i  cbdb-main_rockylinux9.6.tar.gz
+docker images | grep cbdb-main
+```
+
+
+**Run the Docker Image**
+
+```shell
+#run singlenode
+docker run -itd \
+  --name cbdb-cdw \
+  --hostname cdw \
+  -p 122:22 \
+  -p 15432:5432 \
+  cbdb-main:rockylinux9.6
+
+#run multi node
+docker compose -f docker-compose-build.yml up --detach
+
+#stop multi node
+docker compose -f docker-compose-build.yml stop
+docker compose -f docker-compose-build.yml down -v
+```
+
 

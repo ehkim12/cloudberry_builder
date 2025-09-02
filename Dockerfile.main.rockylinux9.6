@@ -162,6 +162,59 @@ RUN git clone https://github.com/cloudberrydb/gpbackup.git /tmp/gpbackup && \
     /tmp/go/bin/gprestore --version && \
     ls /tmp/go/bin
 
+#install pxf
+# ---- PXF prerequisites ----
+RUN dnf install -y java-11-openjdk-devel rsync && dnf clean all
+
+# Match Cloudberry prefix used above (--prefix=/usr/local/cloudberry-db)
+ENV GPHOME=/usr/local/cloudberry-db \
+    PXF_HOME=/usr/local/pxf \
+    PXF_BASE=/home/gpadmin/pxf-base \
+    JAVA_HOME=/usr/lib/jvm/java-11-openjdk \
+    LANG=en_US.UTF-8 \
+    LC_ALL=en_US.UTF-8 \
+    JAVA_TOOL_OPTIONS="-Dfile.encoding=UTF-8" \
+    GRADLE_OPTS="-Dfile.encoding=UTF-8" \
+    LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64:/usr/local/xerces-c-3.3.0/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+
+# Put BOTH dirs on PATH (use separate ENV lines so one doesn't override the other)
+ENV PATH=/usr/local/cloudberry-db/bin:${PATH}
+ENV PATH=/usr/local/pxf/bin:${PATH}
+ENV PG_CONFIG=/usr/local/cloudberry-db/bin/pg_config
+
+# Clone Cloudberry PXF
+RUN git clone https://github.com/apache/cloudberry-pxf.git /tmp/pxf
+
+# Ensure pxf-cli ends up where Makefile expects it
+ENV GOPATH=/tmp/pxf/cli/go \
+    GOBIN=/tmp/pxf/cli/go/bin \
+    GO111MODULE=on
+ENV PATH=${GOBIN}:${PATH}
+
+# Preseed PXF’s default env so `pxf cluster init` picks it up
+RUN sed -i 's|^#\?export JAVA_HOME=.*|export JAVA_HOME=/usr/lib/jvm/java-11-openjdk|' /usr/local/pxf/conf/pxf-env-default || true
+
+# Build and install PXF (skip tests; force UTF-8 to avoid encoding errors)
+RUN set -euxo pipefail; \
+    test -x "$PG_CONFIG" || (echo "[ERROR] pg_config not found at $PG_CONFIG"; ls -l /usr/local/cloudberry-db/bin || true; exit 1); \
+    cd /tmp/pxf; \
+    mkdir -p "${GOBIN}"; \
+    echo "[INFO] Building PXF (skipping tests) ..."; \
+    make -j"$(nproc)" GOPATH="${GOPATH}" GOBIN="${GOBIN}" GRADLE_ARGS="-x test -Dfile.encoding=UTF-8"; \
+    echo "[INFO] Installing PXF into ${PXF_HOME} for GPHOME=${GPHOME} ..."; \
+    make install GPHOME="${GPHOME}" PXF_HOME="${PXF_HOME}" GOPATH="${GOPATH}" GOBIN="${GOBIN}" GRADLE_ARGS="-x test -Dfile.encoding=UTF-8"; \
+    # Post-install checks
+    test -x "${PXF_HOME}/bin/pxf" || (echo "[ERROR] pxf binary missing in ${PXF_HOME}/bin"; ls -l "${PXF_HOME}/bin" || true; exit 2); \
+    if [ -d "${GPHOME}/lib/postgresql" ] || [ -d "${GPHOME}/lib64/postgresql" ]; then \
+    echo "[INFO] Found GP extension dir under ${GPHOME}/lib(64)/postgresql"; \
+    else \
+    echo "[ERROR] Neither ${GPHOME}/lib/postgresql nor ${GPHOME}/lib64/postgresql exists"; \
+    ls -l "${GPHOME}/lib" || true; ls -l "${GPHOME}/lib64" || true; exit 2; \
+    fi; \
+    mkdir -p "${PXF_BASE}"; \
+    chown -R gpadmin:gpadmin "${PXF_HOME}" "${PXF_BASE}"
+
+RUN mkdir -p /usr/java && ln -sfn /usr/lib/jvm/java-11-openjdk /usr/java/default
 
 # ----------------------------------------------------------------------
 # Set the Default User and Command

@@ -30,8 +30,7 @@ sudo chown -R gpadmin.gpadmin /usr/local/cloudberry-db \
                               /tmp/gpinitsystem_singlenode \
                               /tmp/gpinitsystem_multinode \
                               /tmp/gpdb-hosts \
-                              /tmp/multinode-gpinit-hosts \
-                              /tmp/smoke-test.sh
+                              /tmp/multinode-gpinit-hosts 
 
 # ----------------------------------------------------------------------
 # Configure passwordless SSH access for 'gpadmin' user

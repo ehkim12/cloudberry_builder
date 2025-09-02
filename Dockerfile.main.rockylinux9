@@ -137,17 +137,17 @@ RUN cd /tmp/cloudberry && \
     make -C gpMgmt clean all install
 
 # install gpbackup/gprestore 
-#ENV GOPATH="/tmp/go" \
-#    GOBIN="/tmp/go/bin" \
-#    PATH="/tmp/go/bin:$PATH"
+ENV GOPATH="/tmp/go" \
+    GOBIN="/tmp/go/bin" \
+    PATH="/tmp/go/bin:$PATH"
 
-#RUN git clone https://github.com/cloudberrydb/gpbackup.git /tmp/gpbackup && \
-#    cd /tmp/gpbackup && \
-#    make depend && \
-#    make build && \
-#    /tmp/go/bin/gpbackup --version && \
-#    /tmp/go/bin/gprestore --version && \
-#    ls /tmp/go/bin
+RUN git clone https://github.com/cloudberrydb/gpbackup.git /tmp/gpbackup && \
+    cd /tmp/gpbackup && \
+    make depend && \
+    make build && \
+    /tmp/go/bin/gpbackup --version && \
+    /tmp/go/bin/gprestore --version && \
+    ls /tmp/go/bin
 
 
 # ----------------------------------------------------------------------
