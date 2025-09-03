@@ -53,16 +53,6 @@ chmod 600 /home/gpadmin/.ssh/authorized_keys
 ssh-keyscan -t rsa cdw > /home/gpadmin/.ssh/known_hosts 2>/dev/null
 
 # Source Cloudberry environment variables and set
-# COORDINATOR_DATA_DIRECTORY
-
-# Dynamically detect and source the first .sh file in /usr/local/cloudberry-db/
-#for f in /usr/local/cloudberry-db/cloudberry-env.sh \
-#         /usr/local/cloudberry-db/greenplum_path.sh; do
-#    if [ -f "$f" ]; then
-#        . "$f"
-#        break#
-#    fi
-#done
 for f in /usr/local/cloudberry-db/greenplum_path.sh; do
     if [ -f "$f" ]; then
         . "$f"
@@ -135,6 +125,9 @@ EOF
      psql -P pager=off -d template1 -c "SELECT VERSION()"
      psql -P pager=off -d template1 -c "SELECT * FROM gp_segment_configuration ORDER BY dbid"
      psql -P pager=off -d template1 -c "SHOW optimizer"
+     pxf cluster prepare
+     pxf cluster start
+     pxf cluster status
 fi
 
 echo """
