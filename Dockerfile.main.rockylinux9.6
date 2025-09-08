@@ -108,12 +108,12 @@ RUN cd /tmp && git clone https://github.com/apache/cloudberry.git cloudberry && 
 
 ENV CC=/usr/bin/cc \
     CXX=/usr/bin/g++ \
-    CFLAGS="-O3 -flto -ftree-vectorize -Wno-suggest-attribute=format -Wno-missing-prototypes -Wno-error=cast-function-type" \
-    CXXFLAGS="-O3 -flto -ftree-vectorize -Wno-suggest-attribute=format -Wno-error" \
+    CFLAGS="-O3  -ftree-vectorize -Wno-suggest-attribute=format -Wno-missing-prototypes -Wno-error=cast-function-type" \
+    CXXFLAGS="-O3 -ftree-vectorize -Wno-suggest-attribute=format -Wno-error" \
     LDFLAGS="-static-libgcc" \
     PERL=perl \
     PYTHON=python3 \
-    LD_LIBRARY_PATH=/usr/local/lib:/usr/local/xerces-c-${XERCES_VER}/lib:$LD_LIBRARY_PATH \
+    LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64:$LD_LIBRARY_PATH \
     PATH=/usr/local/bin:$PATH \
     LIBS="-ldl"
 
@@ -129,8 +129,8 @@ RUN cd /tmp/cloudberry && \
     --with-gssapi --with-icu --with-ldap --with-libxml --with-lz4 \
     --with-openssl --with-pam --with-perl --with-pgport=5432 \
     --with-python --with-pythonsrc-ext --with-ssl=openssl \
-    --with-includes=/usr/local/xerces-c-${XERCES_VER}/include \
-    --with-libraries=/usr/local/xerces-c-${XERCES_VER}/lib
+    --with-includes=/usr/local/include \
+    --with-libraries=/usr/local/lib64
 
 RUN cd /tmp/cloudberry/contrib/pax_storage && \
     rm -rf build  && \
