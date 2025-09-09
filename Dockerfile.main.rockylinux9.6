@@ -29,34 +29,48 @@ COPY ./configs/* /tmp/
 RUN awk '/hostname:/ {print $2}' docker-compose.yml | grep -v -E '^(cdw|scdw)$' > /tmp/multinode-gpinit-hosts
 
 
-# enable EPEL and CRB once
-RUN dnf -y install epel-release && dnf config-manager --set-enabled crb
+# Enable EPEL + CRB and prep repos (once)
+RUN set -eux; \
+    dnf -y install dnf-plugins-core ca-certificates && update-ca-trust; \
+    dnf -y install epel-release && dnf config-manager --set-enabled crb; \
+    dnf -y clean all; rm -rf /var/cache/dnf; dnf -y --refresh makecache
 
-# your existing deps + sshpass
-RUN dnf -y install \
-    git gcc gcc-c++ make cmake bison flex pkgconfig \
-    libicu libicu-devel libxml2 libxml2-devel lz4 lz4-devel \
-    openssl openssl-devel krb5-libs krb5-devel openldap openldap-devel \
-    pam pam-devel readline readline-devel zlib zlib-devel \
-    perl-ExtUtils-Embed python3 python3-devel libevent libevent-devel \
+# Toolchain & deps (consolidated; no duplicates; cmake3 -> cmake)
+RUN set -eux; \
+    dnf -y groupinstall "Development Tools" && \
+    dnf -y --allowerasing install \
+    # basics
+    sudo git golang \
+    rsync wget which curl \
+    iproute net-tools openssh-server \
+    glibc-langpack-en \
     sshpass \
-    && dnf clean all
+    # compilers & build tools
+    gcc gcc-c++ make cmake bison flex pkgconfig diffutils \
+    # languages/runtimes
+    perl perl-Env perl-ExtUtils-Embed perl-Test-Simple perl-devel \
+    python3 python3-pip python3-devel \
+    # crypto / security / auth
+    openssl openssl-devel \
+    krb5-libs krb5-devel \
+    pam pam-devel \
+    openldap openldap-devel \
+    # DB & common C libs
+    readline readline-devel \
+    zlib zlib-devel \
+    lz4 lz4-devel \
+    libzstd libzstd-devel \
+    libxml2 libxml2-devel \
+    libicu libicu-devel \
+    libevent libevent-devel \
+    libcurl-devel \
+    libuuid libuuid-devel \
+    apr-devel \
+    # from CRB (already enabled above)
+    libuv-devel libyaml-devel perl-IPC-Run protobuf-devel \
+    && dnf -y clean all && rm -rf /var/cache/dnf
 
-RUN      dnf install -y --allowerasing sudo git && \
-    dnf install -y --allowerasing apr-devel bison bzip2-devel curl cmake3 diffutils flex gcc gcc-c++ \
-    glibc-langpack-en glibc-locale-source iproute krb5-devel libcurl-devel libevent-devel \
-    libxml2-devel libuuid-devel libzstd-devel lz4-devel net-tools openldap-devel \
-    openssl-devel openssh-server pam-devel perl perl-ExtUtils-Embed perl-Test-Simple \
-    perl-Env python3-devel python3-pip readline-devel rsync wget which zlib-devel && \
-    dnf install -y --allowerasing gcc gcc-c++ make flex bison \
-    readline-devel zlib-devel openssl-devel \
-    libxml2-devel libicu-devel pam-devel perl-devel python3-devel && \
-    dnf groupinstall "Development Tools" -y && \
-    dnf install -y --allowerasing bison flex readline-devel zlib-devel \
-    openssl-devel libcurl-devel apr-devel perl-ExtUtils-Embed \
-    python3-devel cmake gcc-c++ && \
-    dnf install -y golang && \
-    dnf install -y --enablerepo=crb --allowerasing libuv-devel libyaml-devel perl-IPC-Run protobuf-devel
+
 
 # Build & install Xerces-C 3.3.0 into /usr/local (lib64 on Rocky)
 ARG XERCES_VER=3.3.0
