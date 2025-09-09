@@ -1,61 +1,73 @@
+# =========================
+# Base
+# =========================
 FROM rockylinux/rockylinux:9.6
 
 ARG TIMEZONE_VAR="Asia/Seoul"
+ARG CB_REF="2.0.0-incubating-rc3"   # pin Cloudberry version/tag; can be a commit SHA
+ARG XERCES_VER=3.3.0
 
-ENV container=docker
-ENV MULTINODE=false
+LABEL org.opencontainers.image.title="Cloudberry Builder"
+LABEL org.opencontainers.image.source="https://github.com/apache/cloudberry"
+LABEL org.opencontainers.image.version="${CB_REF}"
 
-RUN dnf -y update && \
-    dnf install -y systemd systemd-libs && \
-    dnf clean all
+ENV container=docker \
+    MULTINODE=false
 
-# clean unwanted systemd units
-RUN [ -d /lib/systemd/system/sysinit.target.wants ] && \
-    find /lib/systemd/system/sysinit.target.wants/ -type l -not -name 'systemd-tmpfiles-setup.service' -delete || true && \
+# Keep systemd minimal but functional
+RUN set -eux; \
+    dnf -y update; \
+    dnf -y install systemd systemd-libs; \
+    dnf -y clean all; rm -rf /var/cache/dnf
+
+# Prune unwanted systemd units
+RUN set -eux; \
+    [ -d /lib/systemd/system/sysinit.target.wants ] && \
+    find /lib/systemd/system/sysinit.target.wants/ -type l -not -name 'systemd-tmpfiles-setup.service' -delete || true; \
     [ -d /lib/systemd/system/multi-user.target.wants ] && \
-    find /lib/systemd/system/multi-user.target.wants/ -type l -delete || true && \
-    find /etc/systemd/system/*.wants/ -type l -delete || true && \
+    find /lib/systemd/system/multi-user.target.wants/ -type l -delete || true; \
+    find /etc/systemd/system/*.wants/ -type l -delete || true; \
     [ -d /lib/systemd/system/local-fs.target.wants ] && \
-    find /lib/systemd/system/local-fs.target.wants/ -type l -delete || true && \
+    find /lib/systemd/system/local-fs.target.wants/ -type l -delete || true; \
     [ -d /lib/systemd/system/sockets.target.wants ] && \
-    find /lib/systemd/system/sockets.target.wants/ -type l -not -name '*udev*' -delete || true && \
+    find /lib/systemd/system/sockets.target.wants/ -type l -not -name '*udev*' -delete || true; \
     [ -d /lib/systemd/system/basic.target.wants ] && \
-    find /lib/systemd/system/basic.target.wants/ -type l -delete || true && \
+    find /lib/systemd/system/basic.target.wants/ -type l -delete || true; \
     [ -d /lib/systemd/system/anaconda.target.wants ] && \
     find /lib/systemd/system/anaconda.target.wants/ -type l -delete || true
 
-COPY docker-compose.yml ./ 
+# Bring in compose file + configs used later
+COPY docker-compose.yml ./
 COPY ./configs/* /tmp/
-RUN awk '/hostname:/ {print $2}' docker-compose.yml | grep -v -E '^(cdw|scdw)$' > /tmp/multinode-gpinit-hosts
 
+# Generate multinode host list (exclude cdw/scdw)
+RUN awk '/hostname:/ {print $2}' docker-compose.yml | grep -v -E '^(cdw|scdw)$' > /tmp/multinode-gpinit-hosts || true
 
-# Enable EPEL + CRB and prep repos (once)
+# =========================
+# Repos & base toolchain
+# =========================
+# Enable EPEL + CRB; prep metadata; (optionally force baseurls — see block below)
 RUN set -eux; \
-    dnf -y install dnf-plugins-core ca-certificates && update-ca-trust; \
-    dnf -y install epel-release && dnf config-manager --set-enabled crb; \
+    dnf -y install dnf-plugins-core ca-certificates; update-ca-trust; \
+    dnf -y install epel-release; \
+    dnf config-manager --set-enabled crb; \
     dnf -y clean all; rm -rf /var/cache/dnf; dnf -y --refresh makecache
 
-# Toolchain & deps (consolidated; no duplicates; cmake3 -> cmake)
+
+# Dev toolchain & libraries (consolidated, no duplicates; cmake3 -> cmake)
 RUN set -eux; \
-    dnf -y groupinstall "Development Tools" && \
+    dnf -y groupinstall "Development Tools"; \
     dnf -y --allowerasing install \
-    # basics
-    sudo git golang \
-    rsync wget which curl \
+    sudo git golang rsync wget which curl \
     iproute net-tools openssh-server \
-    glibc-langpack-en \
-    sshpass \
-    # compilers & build tools
+    glibc-langpack-en sshpass \
     gcc gcc-c++ make cmake bison flex pkgconfig diffutils \
-    # languages/runtimes
     perl perl-Env perl-ExtUtils-Embed perl-Test-Simple perl-devel \
     python3 python3-pip python3-devel \
-    # crypto / security / auth
     openssl openssl-devel \
     krb5-libs krb5-devel \
     pam pam-devel \
     openldap openldap-devel \
-    # DB & common C libs
     readline readline-devel \
     zlib zlib-devel \
     lz4 lz4-devel \
@@ -66,73 +78,78 @@ RUN set -eux; \
     libcurl-devel \
     libuuid libuuid-devel \
     apr-devel \
-    # from CRB (already enabled above)
+    bzip2 bzip2-devel \
     libuv-devel libyaml-devel perl-IPC-Run protobuf-devel \
-    && dnf -y clean all && rm -rf /var/cache/dnf
+    java-11-openjdk-devel \
+    ; \
+    dnf -y clean all; rm -rf /var/cache/dnf
 
-
-
-# Build & install Xerces-C 3.3.0 into /usr/local (lib64 on Rocky)
-ARG XERCES_VER=3.3.0
+# =========================
+# Xerces-C (needed by Cloudberry)
+# =========================
 RUN set -eux; \
     cd /tmp; \
-    curl -fsSL https://archive.apache.org/dist/xerces/c/3/sources/xerces-c-${XERCES_VER}.tar.gz -o xerces-c.tar.gz; \
-    tar xzf xerces-c.tar.gz; \
-    cmake -S xerces-c-${XERCES_VER} -B build-xerces \
+    curl -fsSL "https://archive.apache.org/dist/xerces/c/3/sources/xerces-c-${XERCES_VER}.tar.gz" -o xerces-c.tgz; \
+    tar xzf xerces-c.tgz; \
+    cmake -S "xerces-c-${XERCES_VER}" -B build-xerces \
     -DCMAKE_INSTALL_PREFIX=/usr/local \
     -DCMAKE_INSTALL_LIBDIR=lib64 \
     -DBUILD_SHARED_LIBS=ON; \
     cmake --build build-xerces -j"$(nproc)"; \
     cmake --install build-xerces; \
     ldconfig; \
-    # sanity checks (fail early if headers/libs aren't present)
     test -r /usr/local/include/xercesc/sax2/DefaultHandler.hpp; \
     test -r /usr/local/include/xercesc/util/XMLString.hpp; \
     test -r /usr/local/lib64/libxerces-c.so
 
-# --- system prep ---
-RUN     cp /tmp/cbdb-sysctl.conf /etc/sysctl.conf && \
-    cp /tmp/cbdb-limits.conf /etc/security/limits.d/cbdb-limits.conf && \
-    cat /usr/share/zoneinfo/${TIMEZONE_VAR} > /etc/localtime && \
-    echo "cdw" > /tmp/gpdb-hosts && \
-    echo "/usr/local/lib" >> /etc/ld.so.conf && \
-    echo "/usr/local/lib64" >> /etc/ld.so.conf && \
-    ldconfig && \
-    chmod 777 /tmp/gpinitsystem_singlenode && \
-    chmod 777 /tmp/init_system.sh && \
-    hostname > ~/orig_hostname && \
-    /usr/sbin/groupadd gpadmin && \
-    /usr/sbin/useradd  gpadmin -g gpadmin -G wheel && \
-    setcap cap_net_raw+ep /usr/bin/ping && \
-    echo "cbdb@123"|passwd --stdin gpadmin && \
-    echo "gpadmin        ALL=(ALL)       NOPASSWD: ALL" >> /etc/sudoers && \
-    echo "root           ALL=(ALL)       NOPASSWD: ALL" >> /etc/sudoers && \
-    echo "export COORDINATOR_DATA_DIRECTORY=/data0/database/coordinator/gpseg-1" >> /home/gpadmin/.bashrc && \
-    #echo "source /usr/local/cloudberry-db/greenplum_path.sh"                >> /home/gpadmin/.bashrc && \
-    #echo "source /usr/local/cloudberry-db/cloudberry-env.sh"                >> /home/gpadmin/.bashrc && \
-    mkdir -p /data0/database/coordinator /data0/database/primary /data0/database/mirror && \
-    chown -R gpadmin:gpadmin /data0 && \
-    ssh-keygen -A && \
+# =========================
+# System prep & gpadmin
+# =========================
+RUN set -eux; \
+    cp /tmp/cbdb-sysctl.conf /etc/sysctl.conf; \
+    cp /tmp/cbdb-limits.conf /etc/security/limits.d/cbdb-limits.conf; \
+    cat "/usr/share/zoneinfo/${TIMEZONE_VAR}" > /etc/localtime; \
+    echo "cdw" > /tmp/gpdb-hosts; \
+    { echo "/usr/local/lib"; echo "/usr/local/lib64"; } >> /etc/ld.so.conf; \
+    ldconfig; \
+    chmod 755 /tmp/gpinitsystem_singlenode /tmp/init_system.sh || true; \
+    hostname > /root/orig_hostname; \
+    groupadd -r gpadmin; useradd -m -g gpadmin -G wheel gpadmin; \
+    setcap cap_net_raw+ep /usr/bin/ping; \
+    echo "cbdb@123" | passwd --stdin gpadmin; \
+    echo "gpadmin ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers; \
+    echo "root    ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers; \
+    echo "export COORDINATOR_DATA_DIRECTORY=/data0/database/coordinator/gpseg-1" >> /home/gpadmin/.bashrc; \
+    mkdir -p /data0/database/coordinator /data0/database/primary /data0/database/mirror; \
+    chown -R gpadmin:gpadmin /data0; \
+    ssh-keygen -A; \
     echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
 
-# --- build Cloudberry ---
-RUN cd /tmp && git clone https://github.com/apache/cloudberry.git cloudberry && \
-    cd cloudberry && git submodule update --init --recursive && git fetch --tags && \
-    git checkout 2.0.0-incubating-rc3
+# =========================
+# Build Cloudberry 
+# =========================
+# Note: we use shallow clone + pinned ref; submodules shallow as well
+RUN set -eux; \
+    cd /tmp; \
+    git clone --depth=1 --branch "${CB_REF}" https://github.com/apache/cloudberry.git cloudberry; \
+    cd cloudberry; \
+    git submodule update --init --recursive --depth=1
 
+# Safer ENV (no undefined var warnings)
 ENV CC=/usr/bin/cc \
     CXX=/usr/bin/g++ \
-    CFLAGS="-O3  -ftree-vectorize -Wno-suggest-attribute=format -Wno-missing-prototypes -Wno-error=cast-function-type" \
+    CFLAGS="-O3 -ftree-vectorize -Wno-suggest-attribute=format -Wno-missing-prototypes -Wno-error=cast-function-type" \
     CXXFLAGS="-O3 -ftree-vectorize -Wno-suggest-attribute=format -Wno-error" \
     LDFLAGS="-static-libgcc" \
     PERL=perl \
     PYTHON=python3 \
-    LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64:$LD_LIBRARY_PATH \
-    PATH=/usr/local/bin:$PATH \
-    LIBS="-ldl"
+    LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} \
+    PATH=/usr/local/bin:${PATH}
 
-RUN cd /tmp/cloudberry && \
-    sed -i 's/-ldld/-ldl/g' configure && \
+# Configure (fixes -ldld -> -ldl) + common options
+RUN set -eux; \
+    cd /tmp/cloudberry; \
+    sed -i 's/-ldld/-ldl/g' configure; \
     ./configure --prefix=/usr/local/cloudberry-db \
     --enable-pxf \
     --enable-debug-extensions \
@@ -146,41 +163,46 @@ RUN cd /tmp/cloudberry && \
     --with-includes=/usr/local/include \
     --with-libraries=/usr/local/lib64
 
-RUN cd /tmp/cloudberry/contrib/pax_storage && \
-    rm -rf build  && \
-    cd /tmp/cloudberry && \
-    make -j$(nproc) && \
+# Build all (pax_storage clean as you had)
+RUN set -eux; \
+    cd /tmp/cloudberry/contrib/pax_storage && rm -rf build || true; \
+    cd /tmp/cloudberry; \
+    make -j"$(nproc)"; \
     make install
 
-RUN     cd /tmp/cloudberry/contrib && \
-    make -j$(nproc) && \
+RUN set -eux; \
+    cd /tmp/cloudberry/contrib; \
+    make -j"$(nproc)"; \
     make install
 
-RUN     cd /tmp/cloudberry/gpcontrib && \
-    make -j$(nproc) && \
+RUN set -eux; \
+    cd /tmp/cloudberry/gpcontrib; \
+    make -j"$(nproc)"; \
     make install
 
-RUN cd /tmp/cloudberry  && \
-    make -C gpMgmt clean all install 
+RUN set -eux; \
+    cd /tmp/cloudberry; \
+    make -C gpMgmt clean all install
 
-# install gpbackup/gprestore 
+# =========================
+# gpbackup/gprestore
+# =========================
 ENV GOPATH="/tmp/go" \
     GOBIN="/tmp/go/bin" \
-    PATH="/tmp/go/bin:$PATH"
+    PATH="/tmp/go/bin:${PATH}"
 
-RUN git clone https://github.com/cloudberrydb/gpbackup.git /tmp/gpbackup && \
-    cd /tmp/gpbackup && \
-    make depend && \
-    make build && \
-    /tmp/go/bin/gpbackup --version && \
-    /tmp/go/bin/gprestore --version && \
-    ls /tmp/go/bin
+RUN set -eux; \
+    git clone --depth=1 https://github.com/cloudberrydb/gpbackup.git /tmp/gpbackup; \
+    cd /tmp/gpbackup; \
+    make depend; \
+    make build; \
+    /tmp/go/bin/gpbackup --version; \
+    /tmp/go/bin/gprestore --version; \
+    ls -l /tmp/go/bin
 
-#install pxf
-# ---- PXF prerequisites ----
-RUN dnf install -y java-11-openjdk-devel rsync && dnf clean all
-
-# Match Cloudberry prefix used above (--prefix=/usr/local/cloudberry-db)
+# =========================
+# PXF build & install
+# =========================
 ENV GPHOME=/usr/local/cloudberry-db \
     PXF_HOME=/usr/local/pxf \
     PXF_BASE=/home/gpadmin/pxf-base \
@@ -189,15 +211,15 @@ ENV GPHOME=/usr/local/cloudberry-db \
     LC_ALL=en_US.UTF-8 \
     JAVA_TOOL_OPTIONS="-Dfile.encoding=UTF-8" \
     GRADLE_OPTS="-Dfile.encoding=UTF-8" \
-    LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64:/usr/local/xerces-c-3.3.0/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+    LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
 
-# Put BOTH dirs on PATH (use separate ENV lines so one doesn't override the other)
+# Put BOTH dirs on PATH (append safely)
 ENV PATH=/usr/local/cloudberry-db/bin:${PATH}
 ENV PATH=/usr/local/pxf/bin:${PATH}
 ENV PG_CONFIG=/usr/local/cloudberry-db/bin/pg_config
 
-# Clone Cloudberry PXF
-RUN git clone https://github.com/apache/cloudberry-pxf.git /tmp/pxf
+RUN set -eux; \
+    git clone --depth=1 https://github.com/apache/cloudberry-pxf.git /tmp/pxf
 
 # Ensure pxf-cli ends up where Makefile expects it
 ENV GOPATH=/tmp/pxf/cli/go \
@@ -205,19 +227,15 @@ ENV GOPATH=/tmp/pxf/cli/go \
     GO111MODULE=on
 ENV PATH=${GOBIN}:${PATH}
 
-# Preseed PXF’s default env so `pxf cluster init` picks it up
+# Preseed PXF env (if this file exists post-install; harmless otherwise)
 RUN sed -i 's|^#\?export JAVA_HOME=.*|export JAVA_HOME=/usr/lib/jvm/java-11-openjdk|' /usr/local/pxf/conf/pxf-env-default || true
 
-# Build and install PXF (skip tests; force UTF-8 to avoid encoding errors)
 RUN set -euxo pipefail; \
     test -x "$PG_CONFIG" || (echo "[ERROR] pg_config not found at $PG_CONFIG"; ls -l /usr/local/cloudberry-db/bin || true; exit 1); \
     cd /tmp/pxf; \
     mkdir -p "${GOBIN}"; \
-    echo "[INFO] Building PXF (skipping tests) ..."; \
     make -j"$(nproc)" GOPATH="${GOPATH}" GOBIN="${GOBIN}" GRADLE_ARGS="-x test -Dfile.encoding=UTF-8"; \
-    echo "[INFO] Installing PXF into ${PXF_HOME} for GPHOME=${GPHOME} ..."; \
     make install GPHOME="${GPHOME}" PXF_HOME="${PXF_HOME}" GOPATH="${GOPATH}" GOBIN="${GOBIN}" GRADLE_ARGS="-x test -Dfile.encoding=UTF-8"; \
-    # Post-install checks
     test -x "${PXF_HOME}/bin/pxf" || (echo "[ERROR] pxf binary missing in ${PXF_HOME}/bin"; ls -l "${PXF_HOME}/bin" || true; exit 2); \
     if [ -d "${GPHOME}/lib/postgresql" ] || [ -d "${GPHOME}/lib64/postgresql" ]; then \
     echo "[INFO] Found GP extension dir under ${GPHOME}/lib(64)/postgresql"; \
@@ -230,27 +248,24 @@ RUN set -euxo pipefail; \
 
 RUN mkdir -p /usr/java && ln -sfn /usr/lib/jvm/java-11-openjdk /usr/java/default
 
+# =========================
+# pgvector
+# =========================
+RUN set -eux; \
+    cd /tmp; \
+    git clone --depth=1 --branch v0.8.0 https://github.com/pgvector/pgvector.git; \
+    cd pgvector; \
+    make -j"$(nproc)"; \
+    make install
 
-#install pgvector
-RUN cd /tmp && \
-    git clone --branch v0.8.0 https://github.com/pgvector/pgvector.git && \
-    cd pgvector && \
-    make && \
-    make install # may need sudo
-
-# ----------------------------------------------------------------------
-# Set the Default User and Command
-# ----------------------------------------------------------------------
-# The default user is set to 'gpadmin', and the container starts by
-# running the init_system.sh script. This container serves as a base
-# environment, and the Apache Cloudberry RPM can be installed for
-# testing and functional verification.
-# ----------------------------------------------------------------------
+# =========================
+# Defaults / runtime
+# =========================
 USER gpadmin
 ENV USER=gpadmin
 WORKDIR /home/gpadmin
 
 EXPOSE 5432 22
+VOLUME ["/sys/fs/cgroup"]
 
-VOLUME [ "/sys/fs/cgroup" ]
 CMD ["bash","-c","/tmp/init_system.sh"]
