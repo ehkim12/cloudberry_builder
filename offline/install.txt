@@ -99,6 +99,7 @@ export PERL=perl PYTHON=python3
 export LD_LIBRARY_PATH="/usr/local/lib:/usr/local/lib64:${LD_LIBRARY_PATH:-}"
 export PKG_CONFIG_PATH="/usr/local/lib64/pkgconfig:/usr/local/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
 export LIBS="-ldl"
+
 # Configure (PXF disabled for offline)
 ./configure --prefix=/usr/local/cloudberry-db \
   --enable-debug-extensions \
@@ -130,25 +131,6 @@ sudo chown gpadmin:gpadmin /home/gpadmin/.bashrc
 
 
 
-
-
-#extra python3 module (PyGreSQL-5.2.4)
-
-tar xzf /tmp/cloudberry-offline/src/PyGreSQL-5.2.4.tar.gz
-cd PyGreSQL-5.2.4
-
-python3 setup.py build
-python3 setup.py install --user
-
-
-
-
-
-
-
-
-
-
 sudo install -m 0755 /tmp/cloudberry-offline/bins/gpbackup  /usr/local/bin/gpbackup
 sudo install -m 0755 /tmp/cloudberry-offline/bins/gprestore /usr/local/bin/gprestore
 
@@ -159,6 +141,8 @@ gprestore --version || true
 
 
 
+
+#ssh 설정, cdw 해당 hostname으로 변경 필요
 
 if ! sudo /usr/sbin/sshd; then
     echo "Failed to start SSH daemon" >&2
@@ -212,7 +196,23 @@ export COORDINATOR_DATA_DIRECTORY=/data0/database/coordinator/gpseg-1
 
 
 
-# -------- build & install pgvector (via PGXS) --------
+#extra python3 module (PyGreSQL-5.2.4)
+
+tar xzf /tmp/cloudberry-offline/src/PyGreSQL-5.2.4.tar.gz
+cd PyGreSQL-5.2.4
+
+python3 setup.py build
+python3 setup.py install --user
+
+
+
+
+
+
+
+
+
+# build & install pgvector (via PGXS)
 set -euo pipefail
 
 # 0) Cloudberry 환경 고정
@@ -264,25 +264,23 @@ echo "[OK] pgvector installed"
 
 
 
-#pxf
-
-sudo su - gpadmin
+#build & install pxf
 
 
-#!/usr/bin/env bash
-set -euo pipefail
+# Preseed PXF env (if this file exists post-install; harmless otherwise)
+export GPHOME=/usr/local/cloudberry-db
+export PG_CONFIG="$GPHOME/bin/pg_config"
+"$PG_CONFIG" --version || { echo "[ERROR] pg_config not found under $PG_CONFIG"; return 1 2>/dev/null || exit 1; }
 
-# ---------- Environment ----------
+
 export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 export JAVA_HOME=/usr/lib/jvm/java-11-openjdk
 
-export GPHOME=/usr/local/cloudberry-db
 export PXF_HOME=/usr/local/pxf
 export PXF_BASE=/home/gpadmin/pxf-base
-export PG_CONFIG="$GPHOME/bin/pg_config"
 
-# Offline caches (must already contain what gradle/go need)
+# Offline caches (pre-populated)
 export GRADLE_USER_HOME=/tmp/pxf-cache/gradle_home
 export GRADLE_OPTS="-Dorg.gradle.java.installations.auto-download=false -Dfile.encoding=UTF-8"
 export JAVA_TOOL_OPTIONS="-Dfile.encoding=UTF-8"
@@ -293,85 +291,53 @@ export GO111MODULE=on
 export GOPROXY=off
 export GOSUMDB=off
 export GOFLAGS="-buildvcs=false"
+
 mkdir -p "$GOBIN"
+java -version >/dev/null 2>&1 || { echo "[ERROR] Java not found"; return 1 2>/dev/null || exit 1; }
+go version   >/dev/null 2>&1 || { echo "[ERROR] Go not found";   return 1 2>/dev/null || exit 1; }
 
-# ---------- Sanity checks ----------
-if ! [ -x "$PG_CONFIG" ]; then
-  echo "[ERROR] $PG_CONFIG missing"; exit 1
-fi
-PGXS_PATH="$("$PG_CONFIG" --pgxs || true)"
-if ! [ -f "$PGXS_PATH" ]; then
-  echo "[ERROR] Cloudberry PGXS not found at: $PGXS_PATH"
-  echo "        Re-run Cloudberry 'make install' to install PGXS."
-  exit 1
-fi
-java -version >/dev/null 2>&1 || { echo "[ERROR] Java not found"; exit 1; }
-go version   >/dev/null 2>&1 || { echo "[ERROR] Go not found"; exit 1; }
+# PGXS sanity
+PGXS_PATH="$("$PG_CONFIG" --pgxs)"
+[ -f "$PGXS_PATH" ] || { echo "[ERROR] Cloudberry PGXS not found at $PGXS_PATH (reinstall make install)"; return 1 2>/dev/null || exit 1; }
 
-# ---------- Prepare source ----------
+
 SRC_DIR=/tmp/cloudberry-pxf
-if [ -d "$SRC_DIR" ]; then
-  rm -rf "$SRC_DIR"
-fi
-mkdir -p "$SRC_DIR"
+rm -rf "$SRC_DIR" && mkdir -p "$SRC_DIR"
 
-# Find the tarball (adjust the path if your bundle lives elsewhere)
-TARBALL=$(ls -1 /tmp/cloudberry-offline/src/*pxf*.tar.gz 2>/dev/null | head -n1 || true)
-if [ -z "${TARBALL:-}" ]; then
-  echo "[ERROR] No PXF tarball found under /tmp/cloudberry-offline/src/"
-  exit 1
-fi
+TARBALL=$(ls -1 /tmp/cloudberry-offline/src/*pxf*.tar.gz 2>/dev/null | head -n1)
+[ -n "$TARBALL" ] || { echo "[ERROR] No PXF tarball under /tmp/cloudberry-offline/src/"; return 1 2>/dev/null || exit 1; }
 
 echo "[*] Using PXF tarball: $TARBALL"
-# Optional: show the top-level entries to verify layout
-tar tzf "$TARBALL" | head -n 5
-
-# Extract regardless of top-level dir name
+tar tzf "$TARBALL" | head -n5
 tar xzf "$TARBALL" -C "$SRC_DIR" --strip-components=1
 
 sudo chown -R "$(id -u)":"$(id -g)" "$SRC_DIR"
 git config --global --add safe.directory "$SRC_DIR" || true
 cd "$SRC_DIR"
 
-# ---------- Build (offline) ----------
-echo "[*] Building PXF..."
-make SHELL=/bin/bash -j"$(nproc)" \
-  PG_CONFIG="$PG_CONFIG" \
-  GOPATH="$GOPATH" GOBIN="$GOBIN" \
-  GRADLE_ARGS="--offline -x test -Dfile.encoding=UTF-8"
 
-# ---------- Install ----------
-echo "[*] Installing PXF to $PXF_HOME..."
-sudo make SHELL=/bin/bash install \
-  PG_CONFIG="$PG_CONFIG" \
-  GPHOME="$GPHOME" PXF_HOME="$PXF_HOME" \
-  GOPATH="$GOPATH" GOBIN="$GOBIN" \
-  GRADLE_ARGS="--offline -x test -Dfile.encoding=UTF-8"
+cd /tmp/cloudberry-pxf
 
-# env + ownership
-sudo chown -R gpadmin:gpadmin "$PXF_HOME"
-echo 'export PATH=/usr/local/pxf/bin:$PATH' | sudo tee /etc/profile.d/pxf.sh >/dev/null
+sed -i 's|^#\?export JAVA_HOME=.*|export JAVA_HOME=/usr/lib/jvm/java-11-openjdk|' /usr/local/pxf/conf/pxf-env-default || true
 
-# ---------- Register base (creates ~/pxf-base) ----------
-# 'pxf [cluster] init' is deprecated; use 'register'
-echo "[*] Registering PXF base at $PXF_BASE..."
-sudo -E -u gpadmin /usr/local/pxf/bin/pxf cluster register || true
+set -uxo pipefail \
+test -x "$PG_CONFIG" || (echo "[ERROR] pg_config not found at $PG_CONFIG"; ls -l /usr/local/cloudberry-db/bin || true; exit 1); \
+mkdir -p "${GOBIN}"; \
+make -j"$(nproc)" GOPATH="${GOPATH}" GOBIN="${GOBIN}" GRADLE_ARGS="-x test -Dfile.encoding=UTF-8"; \
+make install GPHOME="${GPHOME}" PXF_HOME="${PXF_HOME}" GOPATH="${GOPATH}" GOBIN="${GOBIN}" GRADLE_ARGS="-x test -Dfile.encoding=UTF-8"; \
+test -x "${PXF_HOME}/bin/pxf" || (echo "[ERROR] pxf binary missing in ${PXF_HOME}/bin"; ls -l "${PXF_HOME}/bin" || true; exit 2); \
+if [ -d "${GPHOME}/lib/postgresql" ] || [ -d "${GPHOME}/lib64/postgresql" ]; then \
+echo "[INFO] Found GP extension dir under ${GPHOME}/lib(64)/postgresql"; \
+else \
+echo "[ERROR] Neither ${GPHOME}/lib/postgresql nor ${GPHOME}/lib64/postgresql exists"; \
+ls -l "${GPHOME}/lib" || true; ls -l "${GPHOME}/lib64" || true; exit 2; \
+fi; \
+mkdir -p "${PXF_BASE}"; \
+chown -R gpadmin:gpadmin "${PXF_HOME}" "${PXF_BASE}"
 
-# Ensure ownership
-sudo chown -R gpadmin:gpadmin "$PXF_BASE"
-
-# Set JAVA_HOME inside pxf-env.sh (created by register)
-if [ -f "$PXF_BASE/conf/pxf-env.sh" ]; then
-  sed -i 's|^#\?export JAVA_HOME=.*|export JAVA_HOME=/usr/lib/jvm/java-11-openjdk|' \
-    "$PXF_BASE/conf/pxf-env.sh"
-fi
-
-
-
-
-echo "[OK] PXF installed at $PXF_HOME, base at $PXF_BASE"
-
-
+# --- leave strict/trace modes cleanly ---
+set +x +u +e
+set +o pipefail
 
 
 

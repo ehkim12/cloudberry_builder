@@ -101,6 +101,12 @@ mv "$RPMS_DIR"/gcc-toolset-*.rpm  "$RPMS_DIR/_hold/" 2>/dev/null || true
 mv "$RPMS_DIR"/git-core*.rpm "$RPMS_DIR"/perl-Git*.rpm "$RPMS_DIR"/git-core-doc*.rpm \
    "$RPMS_DIR/_hold/" 2>/dev/null || true
 
+# Grab libcurl-devel with dependencies; include curl & libcurl explicitly to avoid getting only -minimal
+sudo dnf -y download --resolve --downloaddir="$RPMS_DIR" \
+  libcurl-devel \
+  libcurl \
+  curl
+
 echo "[INFO] Quarantined:"
 ls -1 "$RPMS_DIR/_hold" || true
 
