@@ -1,0 +1,378 @@
+#cloudberry installation rocky linux 9.6
+
+
+tar xzf cloudberry-offline.tar.gz
+
+
+
+#/tmp/cloudberry-offline
+
+cd /tmp/cloudberry-offline/rpms
+
+sudo dnf install -y ./*.rpm --skip-broken
+
+
+
+
+RPMS_DIR=/tmp/cloudberry-offline/rpms
+sudo dnf -y --disablerepo='*' --nogpgcheck --nobest --skip-broken \
+  install "$RPMS_DIR"/protobuf-*.x86_64.rpm \
+          "$RPMS_DIR"/protobuf-compiler-*.x86_64.rpm \
+          "$RPMS_DIR"/protobuf-devel-*.x86_64.rpm
+
+
+
+
+
+
+
+# 1) wipe old source & build dirs
+cd /tmp
+sudo rm -rf /tmp/xerces-c-3.3.0 /tmp/build-xerces
+
+# 2) extract fresh (to /tmp) and ensure you own the files
+tar xzf /tmp/cloudberry-offline/src/xerces-c-3.3.0.tar.gz -C /tmp
+sudo chown -R "$USER":"$USER" /tmp/xerces-c-3.3.0
+
+# 3) configure, build, install
+cmake -S /tmp/xerces-c-3.3.0 -B /tmp/build-xerces \
+  -DCMAKE_INSTALL_PREFIX=/usr/local \
+  -DCMAKE_INSTALL_LIBDIR=lib64 \
+  -DBUILD_SHARED_LIBS=ON
+
+cmake --build /tmp/build-xerces -j"$(nproc)"
+sudo cmake --install /tmp/build-xerces
+
+# 4) refresh linker cache (and make sure /usr/local/lib64 is searched)
+echo -e "/usr/local/lib\n/usr/local/lib64" | sudo tee /etc/ld.so.conf.d/local-local.conf >/dev/null
+sudo ldconfig
+
+# 5) quick checks
+ldconfig -p | grep -i xerces
+pkg-config --modversion xerces-c || true
+
+
+
+
+
+
+# Prepare user & dirs (optional but typical)
+sudo groupadd -f gpadmin
+id gpadmin >/dev/null 2>&1 || sudo useradd -g gpadmin -G wheel gpadmin
+echo "gpadmin ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/99-gpadmin >/dev/null
+sudo chmod 0440 /etc/sudoers.d/99-gpadmin
+sudo mkdir -p /data0/database/{coordinator,primary,mirror}
+sudo chown -R gpadmin:gpadmin /data0
+
+
+
+sudo su - gpadmin
+
+#set environment
+
+echo 'export JAVA_HOME=/usr/lib/jvm/java-11-openjdk' >> ~/.bashrc
+echo 'export GPHOME=/usr/local/cloudberry-db' >> ~/.bashrc
+echo 'export PXF_HOME=/usr/local/pxf' >> ~/.bashrc
+echo 'export PXF_BASE=/home/gpadmin/pxf-base' >> ~/.bashrc
+echo 'export  PG_CONFIG=$GPHOME/bin/pg_config' >> ~/.bashrc
+echo 'export GOPATH=/tmp/pxf-cache/pxf_gopath' >> ~/.bashrc
+echo 'export GOBIN=$GOPATH/bin' >> ~/.bashrc
+source ~/.bashrc
+
+
+
+# Unpack Cloudberry source (already includes submodules)
+cd /tmp
+tar xzf /tmp/cloudberry-offline/src/cloudberry-2.0.0-incubating-rc3-src.tar.gz
+cd cloudberry
+sed -i 's/-ldld/-ldl/g' configure || true
+
+
+#make distclean
+
+# Build environment (safe defaults)
+export CC=/usr/bin/cc CXX=/usr/bin/g++
+export CFLAGS="-O3 -ftree-vectorize -Wno-suggest-attribute=format -Wno-missing-prototypes -Wno-error=cast-function-type"
+export CXXFLAGS="-O3 -ftree-vectorize -Wno-suggest-attribute=format -Wno-error"
+export LDFLAGS="-static-libgcc"
+export PERL=perl PYTHON=python3
+export LD_LIBRARY_PATH="/usr/local/lib:/usr/local/lib64:${LD_LIBRARY_PATH:-}"
+export PKG_CONFIG_PATH="/usr/local/lib64/pkgconfig:/usr/local/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+export LIBS="-ldl"
+# Configure (PXF disabled for offline)
+./configure --prefix=/usr/local/cloudberry-db \
+  --enable-debug-extensions \
+  --enable-ic-proxy \
+  --enable-openssl-redirect \
+  --enable-orca \
+  --enable-pax \
+  --with-gssapi --with-icu --with-ldap --with-libxml --with-lz4 \
+  --with-openssl --with-pam --with-perl --with-pgport=5432 \
+  --with-python --with-ssl=openssl \
+  --with-includes="/usr/local/include" \
+  --with-libraries="/usr/local/lib64:/usr/local/lib" 
+
+make -j"$(nproc)"
+sudo make install
+
+# contrib / gpcontrib / gpMgmt (like your online flow)
+sudo make -C contrib -j"$(nproc)" install
+sudo make -C gpcontrib -j"$(nproc)" install
+sudo make -C gpMgmt clean all install
+
+# Environment
+echo 'source /usr/local/cloudberry-db/greenplum_path.sh' | sudo tee -a /home/gpadmin/.bashrc >/dev/null
+echo 'export COORDINATOR_DATA_DIRECTORY=/data0/database/coordinator/gpseg-1' | sudo tee -a /home/gpadmin/.bashrc >/dev/null
+sudo chown gpadmin:gpadmin /home/gpadmin/.bashrc
+
+
+
+
+
+
+
+
+#extra python3 module (PyGreSQL-5.2.4)
+
+tar xzf /tmp/cloudberry-offline/src/PyGreSQL-5.2.4.tar.gz
+cd PyGreSQL-5.2.4
+
+python3 setup.py build
+python3 setup.py install --user
+
+
+
+
+
+
+
+
+
+
+sudo install -m 0755 /tmp/cloudberry-offline/bins/gpbackup  /usr/local/bin/gpbackup
+sudo install -m 0755 /tmp/cloudberry-offline/bins/gprestore /usr/local/bin/gprestore
+
+gpbackup --version || true
+gprestore --version || true
+
+
+
+
+
+
+if ! sudo /usr/sbin/sshd; then
+    echo "Failed to start SSH daemon" >&2
+    exit 1
+fi
+
+# ----------------------------------------------------------------------
+# Remove /run/nologin to allow logins
+# ----------------------------------------------------------------------
+# The /run/nologin file, if present, prevents users from logging into
+# the system. This file is removed to ensure that users can log in via SSH.
+# ----------------------------------------------------------------------
+sudo rm -rf /run/nologin
+
+# ## Set gpadmin ownership - Clouberry install directory and supporting
+# ## cluster creation files.
+sudo chown -R gpadmin.gpadmin /usr/local/cloudberry-db 
+
+# ----------------------------------------------------------------------
+# Configure passwordless SSH access for 'gpadmin' user
+# ----------------------------------------------------------------------
+# The script sets up SSH key-based authentication for the 'gpadmin' user,
+# allowing passwordless SSH access. It generates a new SSH key pair if one
+# does not already exist, and configures the necessary permissions.
+# ----------------------------------------------------------------------
+mkdir -p /home/gpadmin/.ssh
+chmod 700 /home/gpadmin/.ssh
+
+if [ ! -f /home/gpadmin/.ssh/id_rsa ]; then
+    ssh-keygen -t rsa -b 4096 -C gpadmin -f /home/gpadmin/.ssh/id_rsa -P "" > /dev/null 2>&1
+fi
+
+cat /home/gpadmin/.ssh/id_rsa.pub >> /home/gpadmin/.ssh/authorized_keys
+chmod 600 /home/gpadmin/.ssh/authorized_keys
+
+# Add the container's hostname to the known_hosts file to avoid SSH warnings
+ssh-keyscan -t rsa cdw > /home/gpadmin/.ssh/known_hosts 2>/dev/null
+
+# Source Cloudberry environment variables and set
+for f in /usr/local/cloudberry-db/greenplum_path.sh; do
+    if [ -f "$f" ]; then
+        . "$f"
+        echo "source $f"                >> /home/gpadmin/.bashrc
+        break
+    fi
+done
+export COORDINATOR_DATA_DIRECTORY=/data0/database/coordinator/gpseg-1
+
+
+
+
+
+
+# -------- build & install pgvector (via PGXS) --------
+set -euo pipefail
+
+# 0) Cloudberry 환경 고정
+export GPHOME=${GPHOME:-/usr/local/cloudberry-db}
+export PATH="$GPHOME/bin:$PATH"
+export PG_CONFIG="$GPHOME/bin/pg_config"
+
+echo "[*] Using pg_config: $(which pg_config)"
+echo "[*] Version: $(pg_config --version || true)"
+echo "[*] PGXS: $(pg_config --pgxs || true)"
+
+# 1) 작업 디렉터리 정리 및 권한 복구
+echo "[*] Preparing build dir..."
+sudo rm -rf /tmp/pgvector-0.8.0
+tar xzf "/tmp/cloudberry-offline/src/pgvector-0.8.0.tar.gz" -C /tmp
+chown -R "$(whoami):$(id -gn)" /tmp/pgvector-0.8.0
+chmod -R u+rwX /tmp/pgvector-0.8.0
+cd /tmp/pgvector-0.8.0
+
+# 2) 빌드 (Cloudberry의 PGXS 사용을 강제)
+echo "[*] Building pgvector with Cloudberry PGXS..."
+make USE_PGXS=1 PG_CONFIG="$PG_CONFIG" -j"$(nproc)"
+
+# 3) 설치 (루트 필요 시에만 sudo)
+echo "[*] Installing pgvector..."
+sudo make USE_PGXS=1 PG_CONFIG="$PG_CONFIG" install
+
+# 4) 설치 결과 확인 (라이브러리/확장 스크립트)
+pkglibdir="$(pg_config --pkglibdir)"         # 예) /usr/local/cloudberry-db/lib/postgresql
+sharedir="$(pg_config --sharedir)"           # 예) /usr/local/cloudberry-db/share/postgresql
+echo "[*] pkglibdir: $pkglibdir"
+echo "[*] sharedir : $sharedir"
+
+echo "[*] Files in pkglibdir (grep vector):"
+ls -l "$pkglibdir" | grep -i vector || true
+
+echo "[*] Files in extension dir (grep vector):"
+ls -l "$sharedir/extension" | grep -i vector || true
+
+echo "[OK] pgvector installed"
+
+
+
+
+
+
+
+
+
+
+
+#pxf
+
+sudo su - gpadmin
+
+
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ---------- Environment ----------
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+export JAVA_HOME=/usr/lib/jvm/java-11-openjdk
+
+export GPHOME=/usr/local/cloudberry-db
+export PXF_HOME=/usr/local/pxf
+export PXF_BASE=/home/gpadmin/pxf-base
+export PG_CONFIG="$GPHOME/bin/pg_config"
+
+# Offline caches (must already contain what gradle/go need)
+export GRADLE_USER_HOME=/tmp/pxf-cache/gradle_home
+export GRADLE_OPTS="-Dorg.gradle.java.installations.auto-download=false -Dfile.encoding=UTF-8"
+export JAVA_TOOL_OPTIONS="-Dfile.encoding=UTF-8"
+
+export GOPATH=/tmp/pxf-cache/pxf_gopath
+export GOBIN="$GOPATH/bin"
+export GO111MODULE=on
+export GOPROXY=off
+export GOSUMDB=off
+export GOFLAGS="-buildvcs=false"
+mkdir -p "$GOBIN"
+
+# ---------- Sanity checks ----------
+if ! [ -x "$PG_CONFIG" ]; then
+  echo "[ERROR] $PG_CONFIG missing"; exit 1
+fi
+PGXS_PATH="$("$PG_CONFIG" --pgxs || true)"
+if ! [ -f "$PGXS_PATH" ]; then
+  echo "[ERROR] Cloudberry PGXS not found at: $PGXS_PATH"
+  echo "        Re-run Cloudberry 'make install' to install PGXS."
+  exit 1
+fi
+java -version >/dev/null 2>&1 || { echo "[ERROR] Java not found"; exit 1; }
+go version   >/dev/null 2>&1 || { echo "[ERROR] Go not found"; exit 1; }
+
+# ---------- Prepare source ----------
+SRC_DIR=/tmp/cloudberry-pxf
+if [ -d "$SRC_DIR" ]; then
+  rm -rf "$SRC_DIR"
+fi
+mkdir -p "$SRC_DIR"
+
+# Find the tarball (adjust the path if your bundle lives elsewhere)
+TARBALL=$(ls -1 /tmp/cloudberry-offline/src/*pxf*.tar.gz 2>/dev/null | head -n1 || true)
+if [ -z "${TARBALL:-}" ]; then
+  echo "[ERROR] No PXF tarball found under /tmp/cloudberry-offline/src/"
+  exit 1
+fi
+
+echo "[*] Using PXF tarball: $TARBALL"
+# Optional: show the top-level entries to verify layout
+tar tzf "$TARBALL" | head -n 5
+
+# Extract regardless of top-level dir name
+tar xzf "$TARBALL" -C "$SRC_DIR" --strip-components=1
+
+sudo chown -R "$(id -u)":"$(id -g)" "$SRC_DIR"
+git config --global --add safe.directory "$SRC_DIR" || true
+cd "$SRC_DIR"
+
+# ---------- Build (offline) ----------
+echo "[*] Building PXF..."
+make SHELL=/bin/bash -j"$(nproc)" \
+  PG_CONFIG="$PG_CONFIG" \
+  GOPATH="$GOPATH" GOBIN="$GOBIN" \
+  GRADLE_ARGS="--offline -x test -Dfile.encoding=UTF-8"
+
+# ---------- Install ----------
+echo "[*] Installing PXF to $PXF_HOME..."
+sudo make SHELL=/bin/bash install \
+  PG_CONFIG="$PG_CONFIG" \
+  GPHOME="$GPHOME" PXF_HOME="$PXF_HOME" \
+  GOPATH="$GOPATH" GOBIN="$GOBIN" \
+  GRADLE_ARGS="--offline -x test -Dfile.encoding=UTF-8"
+
+# env + ownership
+sudo chown -R gpadmin:gpadmin "$PXF_HOME"
+echo 'export PATH=/usr/local/pxf/bin:$PATH' | sudo tee /etc/profile.d/pxf.sh >/dev/null
+
+# ---------- Register base (creates ~/pxf-base) ----------
+# 'pxf [cluster] init' is deprecated; use 'register'
+echo "[*] Registering PXF base at $PXF_BASE..."
+sudo -E -u gpadmin /usr/local/pxf/bin/pxf cluster register || true
+
+# Ensure ownership
+sudo chown -R gpadmin:gpadmin "$PXF_BASE"
+
+# Set JAVA_HOME inside pxf-env.sh (created by register)
+if [ -f "$PXF_BASE/conf/pxf-env.sh" ]; then
+  sed -i 's|^#\?export JAVA_HOME=.*|export JAVA_HOME=/usr/lib/jvm/java-11-openjdk|' \
+    "$PXF_BASE/conf/pxf-env.sh"
+fi
+
+
+
+
+echo "[OK] PXF installed at $PXF_HOME, base at $PXF_BASE"
+
+
+
+
+
+
