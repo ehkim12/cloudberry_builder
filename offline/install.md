@@ -93,18 +93,6 @@ sudo chown gpadmin:gpadmin /home/gpadmin/.bashrc
 
 
 
-## Install Pygresql
-
-```bash
-#extra python3 module (PyGreSQL-5.2.4)
-tar xzf /tmp/cloudberry-offline/src/PyGreSQL-5.2.4.tar.gz
-cd PyGreSQL-5.2.4
-
-python3 setup.py build
-python3 setup.py install --user
-
-```
-
 
 
 ## Backup Tools
@@ -162,6 +150,18 @@ pxf status || true
 ```
 
 
+
+## Install Pygresql
+
+```bash
+#extra python3 module (PyGreSQL-5.2.4)
+tar xzf /tmp/cloudberry-offline/src/PyGreSQL-5.2.4.tar.gz
+cd PyGreSQL-5.2.4
+
+python3 setup.py build
+python3 setup.py install --user
+
+```
 
 
 
