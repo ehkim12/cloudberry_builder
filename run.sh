@@ -17,6 +17,9 @@ export CODEBASE_VERSION="main"
 TIMEZONE_VAR="${TIMEZONE_VAR:-$DEFAULT_TIMEZONE_VAR}"
 PIP_INDEX_URL_VAR="${PIP_INDEX_URL_VAR:-$DEFAULT_PIP_INDEX_URL_VAR}"
 
+export cloudberry_min="n"
+cloudberry_min="n"
+
 # Function to display help message
 function usage() {
 #    echo "Usage: $0 [-o <os_version>] [-c <codebase_version>] [-b] [-m]"
@@ -30,7 +33,7 @@ function usage() {
 }
 
 # Parse command-line options
-while getopts "o:c:t:p:sbh" opt; do
+while getopts "o:c:t:p:msbh" opt; do
     case "${opt}" in
         o)
             OS_VERSION=${OPTARG}
@@ -44,6 +47,9 @@ while getopts "o:c:t:p:sbh" opt; do
         p)
             PIP_INDEX_URL_VAR=${OPTARG}
             ;;
+        m)
+            cloudberry_min="y"
+            ;; 
         b)
             BUILD_ONLY="true"
             MULTINODE="false"
@@ -59,6 +65,7 @@ while getopts "o:c:t:p:sbh" opt; do
             ;;
     esac
 done
+
 
 if [[ $MULTINODE == "true" ]] && ! docker compose version; then
         echo "Error: Multinode -m flag found in run arguments but calling docker compose failed. Please install Docker Compose by following the instructions at https://docs.docker.com/compose/install/. Exiting"
@@ -112,21 +119,27 @@ if [[ "${CODEBASE_VERSION}" != "main" && ! "${CODEBASE_VERSION}" =~ ^[0-9]+\.[0-
 fi
 
 # Build image
-if [[ "${CODEBASE_VERSION}" = "main"  ]]; then
-    DOCKERFILE=Dockerfile.${CODEBASE_VERSION}.${OS_VERSION}
-
+if [[ "${cloudberry_min}" = "y"  ]]; then
+    DOCKERFILE=Dockerfile.min.${OS_VERSION}
     docker build --file ${DOCKERFILE} \
                  --build-arg TIMEZONE_VAR="${TIMEZONE_VAR}" \
+                 --build-arg cloudberry_min="${cloudberry_min}" \
+                 --tag cbdb-${CODEBASE_VERSION}:${OS_VERSION} .
+elif [[ "${CODEBASE_VERSION}" = "main"  ]]; then
+    DOCKERFILE=Dockerfile.${CODEBASE_VERSION}.${OS_VERSION}
+    docker build --file ${DOCKERFILE} \
+                 --build-arg TIMEZONE_VAR="${TIMEZONE_VAR}" \
+                 --build-arg cloudberry_min="${cloudberry_min}" \
                  --tag cbdb-${CODEBASE_VERSION}:${OS_VERSION} .
 else
     DOCKERFILE=Dockerfile.RELEASE.${OS_VERSION}
-
     docker build --file ${DOCKERFILE} \
                  --build-arg TIMEZONE_VAR="${TIMEZONE_VAR}" \
                  --build-arg PIP_INDEX_URL_VAR="${PIP_INDEX_URL_VAR}" \
                  --build-arg CODEBASE_VERSION_VAR="${CODEBASE_VERSION}" \
                  --tag cbdb-${CODEBASE_VERSION}:${OS_VERSION} .
 fi
+
 
 # Check if build only flag is set
 if [ "${BUILD_ONLY}" == "true" ]; then

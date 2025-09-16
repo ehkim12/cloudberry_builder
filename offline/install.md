@@ -161,6 +161,12 @@ cd PyGreSQL-5.2.4
 python3 setup.py build
 python3 setup.py install --user
 
+
+# Fallback only if the RPM isn't present:
+if ! python3 -c 'import psutil' 2>/dev/null; then
+  python3 -m pip install --user --no-index --find-links /tmp/cloudberry-offline/src psutil
+fi
+
 ```
 
 

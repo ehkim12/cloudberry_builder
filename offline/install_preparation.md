@@ -14,21 +14,41 @@ set -euo pipefail
 BASE=/tmp/cloudberry-offline
 RPMS_DIR="$BASE/rpms"
 SRC_DIR="$BASE/src"
-mkdir -p "$RPMS_DIR" "$SRC_DIR"
+TMPROOT="$(mktemp -d)"
+CACHE_DIR="$TMPROOT/var/cache/dnf"
+mkdir -p "$RPMS_DIR" "$SRC_DIR" "$CACHE_DIR"
 
-# Basic tooling & cache
-sudo dnf -y install dnf-plugins-core epel-release ca-certificates
+# ------------------------------------------------------------------
+# Repos: only Rocky BaseOS/AppStream/CRB + EPEL (NO PGDG)
+# ------------------------------------------------------------------
+sudo dnf -y install dnf-plugins-core ca-certificates epel-release
 sudo update-ca-trust || true
 sudo dnf config-manager --set-enabled crb || true
-sudo dnf clean all && sudo dnf -y makecache
+sudo dnf config-manager --set-disabled 'pgdg*' || true
+
+# Lock the repo set we want to use
+REPOS="baseos,appstream,crb,epel"
+
+# Common DNF options for the clean installroot
+DNF_IR_OPTS=(
+  -y
+  --installroot="$TMPROOT"
+  --releasever=9
+  --disablerepo='*' --enablerepo="$REPOS"
+  --setopt=module_platform_id=platform:el9
+  --setopt=cachedir="$CACHE_DIR"
+  --setopt=install_weak_deps=False
+  --setopt=obsoletes=0
+  --forcearch=x86_64
+)
 
 # -----------------------------
-# Package set
+# Package set (x86_64/noarch)
 # -----------------------------
 PKGS=(
   # tools & utilities
   sudo git golang rsync wget which curl
-  iproute net-tools openssh-server
+  iproute net-tools openssh-server openssh-clients
   glibc-langpack-en sshpass
 
   # toolchain
@@ -39,6 +59,7 @@ PKGS=(
   bison flex m4 diffutils
 
   # libs (+devel)
+  jansson-devel
   openssl openssl-devel
   krb5-libs krb5-devel
   pam pam-devel
@@ -61,49 +82,64 @@ PKGS=(
   protobuf protobuf-compiler protobuf-devel
 
   # extras for pkg-config
-  xz-devel ncurses-devel pcre2-devel keyutils-libs-devel libcom_err-devel   libselinux-devel libsepol-devel libverto-devel
+  xz-devel ncurses-devel pcre2-devel keyutils-libs-devel \
+  libcom_err-devel libselinux-devel libsepol-devel libverto-devel
 
   # python
   python3 python3-pip python3-devel python3-setuptools
+  python3-psutil              # <-- add this
 
-  # keep Rocky libpq
+  # keep Rocky libpq (NOT PGDG)
   libpq libpq-devel postgresql-libs
 
   # perl
   perl perl-Env perl-ExtUtils-Embed perl-Test-Simple perl-devel
 )
 
-echo "[INFO] Downloading 'Development Tools' group..."
-sudo dnf -y groupinstall "Development Tools"   --downloadonly --downloaddir="$RPMS_DIR" --setopt=install_weak_deps=False || true
+echo "[INFO] Preparing clean metadata/cache..."
+sudo dnf "${DNF_IR_OPTS[@]}" clean all
+sudo dnf "${DNF_IR_OPTS[@]}" makecache
 
-echo "[INFO] Downloading named packages..."
-sudo dnf -y download --resolve --downloaddir="$RPMS_DIR" "${PKGS[@]}"
+echo "[INFO] Downloading 'Development Tools' group (download-only to $RPMS_DIR)..."
+sudo dnf "${DNF_IR_OPTS[@]}" groupinstall "Development Tools" \
+  --downloadonly --downloaddir="$RPMS_DIR" || true
 
-# Quarantine conflicting RPMs
+echo "[INFO] Downloading named packages (download-only to $RPMS_DIR)..."
+sudo dnf "${DNF_IR_OPTS[@]}" install --downloadonly \
+  --downloaddir="$RPMS_DIR" "${PKGS[@]}"
+
+# Extra guarantees for must-haves (no-ops if already present)
+sudo dnf "${DNF_IR_OPTS[@]}" install --downloadonly \
+  --downloaddir="$RPMS_DIR" iproute openssh-clients curl libcurl libcurl-devel
+
+# ------------------------------------------------------------------
+# Keep the bundle clean: x86_64/noarch only; quarantine anything else
+# ------------------------------------------------------------------
 mkdir -p "$RPMS_DIR/_hold"
-mv "$RPMS_DIR"/*.i686.rpm "$RPMS_DIR/_hold/" 2>/dev/null || true
-mv "$RPMS_DIR"/libpq5-*.rpm "$RPMS_DIR/_hold/" 2>/dev/null || true
-mv "$RPMS_DIR"/glibc-*.rpm "$RPMS_DIR/_hold/" 2>/dev/null || true
-mv "$RPMS_DIR"/openssl-libs-*.rpm "$RPMS_DIR/_hold/" 2>/dev/null || true
-mv "$RPMS_DIR"/libcurl-*.rpm "$RPMS_DIR/_hold/" 2>/dev/null || true
-mv "$RPMS_DIR"/audit*.rpm "$RPMS_DIR/_hold/" 2>/dev/null || true
-mv "$RPMS_DIR"/iproute-*.rpm "$RPMS_DIR/_hold/" 2>/dev/null || true
-mv "$RPMS_DIR"/clang*.rpm "$RPMS_DIR/_hold/" 2>/dev/null || true
-mv "$RPMS_DIR"/llvm*.rpm "$RPMS_DIR/_hold/" 2>/dev/null || true
-mv "$RPMS_DIR"/libomp*.rpm "$RPMS_DIR/_hold/" 2>/dev/null || true
-mv "$RPMS_DIR"/gcc-toolset-*.rpm "$RPMS_DIR/_hold/" 2>/dev/null || true
-mv "$RPMS_DIR"/git-core*.rpm "$RPMS_DIR"/perl-Git*.rpm "$RPMS_DIR"/git-core-doc*.rpm    "$RPMS_DIR/_hold/" 2>/dev/null || true
+find "$RPMS_DIR" -maxdepth 1 -type f -name '*.i686.rpm' -exec mv -f {} "$RPMS_DIR/_hold/" \; 2>/dev/null || true
 
-# Grab libcurl-devel explicitly
-sudo dnf -y download --resolve --downloaddir="$RPMS_DIR"   libcurl-devel libcurl curl
+# Stage PyGreSQL source tarball (optional)
+curl -fsSL -o "$SRC_DIR/PyGreSQL-5.2.4.tar.gz" \
+  https://files.pythonhosted.org/packages/source/P/PyGreSQL/PyGreSQL-5.2.4.tar.gz || true
 
-echo "[INFO] Quarantined:"
-ls -1 "$RPMS_DIR/_hold" || true
-
-# Stage PyGreSQL
-curl -fsSL -o "$SRC_DIR/PyGreSQL-5.2.4.tar.gz"   https://files.pythonhosted.org/packages/source/P/PyGreSQL/PyGreSQL-5.2.4.tar.gz
+# Sanity checks
+echo "[INFO] Sample presence checks:"
+ls "$RPMS_DIR"/iproute-*.x86_64.rpm
+ls "$RPMS_DIR"/openssh-clients-*.x86_64.rpm
+ls "$RPMS_DIR"/curl-*.x86_64.rpm
+ls "$RPMS_DIR"/libcurl-*.x86_64.rpm
+ls "$RPMS_DIR"/libcurl-devel-*.x86_64.rpm
+echo "[INFO] Total RPM count:"
+ls "$RPMS_DIR"/*.rpm | wc -l || true
 
 echo "[OK] All artifacts harvested under $BASE"
+echo "[CLEANUP] Removing temp installroot..."
+sudo rm -rf "$TMPROOT"
+
+# Optional: also stage a psutil wheel as offline fallback for pip
+python3 -m pip download --only-binary=:all: --platform manylinux2014_x86_64 \
+  --python-version 39 --implementation cp --abi cp39 \
+  psutil -d "$SRC_DIR" || true
 ```
 
 ---

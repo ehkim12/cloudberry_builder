@@ -1,7 +1,7 @@
 # =========================
 # Base
 # =========================
-FROM rockylinux/rockylinux:9
+FROM rockylinux/rockylinux:9.6
 
 ARG TIMEZONE_VAR="Asia/Seoul"
 ARG CB_REF="2.0.0-incubating-rc3"   # pin Cloudberry version/tag; can be a commit SHA
@@ -81,6 +81,7 @@ RUN set -eux; \
     bzip2 bzip2-devel \
     libuv-devel libyaml-devel perl-IPC-Run protobuf-devel \
     java-11-openjdk-devel \
+    jansson-devel \
     ; \
     dnf -y clean all; rm -rf /var/cache/dnf
 
@@ -152,6 +153,8 @@ RUN set -eux; \
     sed -i 's/-ldld/-ldl/g' configure; \
     ./configure --prefix=/usr/local/cloudberry-db \
     --enable-pxf \
+    --enable-debug \
+    #--enable-external-fts \
     --enable-debug-extensions \
     --enable-ic-proxy \
     --enable-openssl-redirect \
@@ -184,79 +187,15 @@ RUN set -eux; \
     cd /tmp/cloudberry; \
     make -C gpMgmt clean all install
 
-# =========================
-# gpbackup/gprestore
-# =========================
-ENV GOPATH="/tmp/go" \
-    GOBIN="/tmp/go/bin" \
-    PATH="/tmp/go/bin:${PATH}"
 
-RUN set -eux; \
-    git clone --depth=1 https://github.com/cloudberrydb/gpbackup.git /tmp/gpbackup; \
-    cd /tmp/gpbackup; \
-    make depend; \
-    make build; \
-    /tmp/go/bin/gpbackup --version; \
-    /tmp/go/bin/gprestore --version; \
-    ls -l /tmp/go/bin
 
-# =========================
-# PXF build & install
-# =========================
-ENV GPHOME=/usr/local/cloudberry-db \
-    PXF_HOME=/usr/local/pxf \
-    PXF_BASE=/home/gpadmin/pxf-base \
-    JAVA_HOME=/usr/lib/jvm/java-11-openjdk \
-    LANG=en_US.UTF-8 \
-    LC_ALL=en_US.UTF-8 \
-    JAVA_TOOL_OPTIONS="-Dfile.encoding=UTF-8" \
-    GRADLE_OPTS="-Dfile.encoding=UTF-8" \
-    LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
 
-# Put BOTH dirs on PATH (append safely)
-ENV PATH=/usr/local/cloudberry-db/bin:${PATH}
-ENV PATH=/usr/local/pxf/bin:${PATH}
-ENV PG_CONFIG=/usr/local/cloudberry-db/bin/pg_config
+# Install ETCD manually
+RUN wget https://github.com/etcd-io/etcd/releases/download/v3.5.2/etcd-v3.5.2-linux-amd64.tar.gz && \
+    tar -xvzf etcd-v3.5.2-linux-amd64.tar.gz && \
+    mv etcd-v3.5.2-linux-amd64/etcd* /usr/local/bin/ && \
+    rm -rf etcd-v3.5.2-linux-amd64 etcd-v3.5.2-linux-amd64.tar.gz  
 
-RUN set -eux; \
-    git clone --depth=1 https://github.com/apache/cloudberry-pxf.git /tmp/pxf
-
-# Ensure pxf-cli ends up where Makefile expects it
-ENV GOPATH=/tmp/pxf/cli/go \
-    GOBIN=/tmp/pxf/cli/go/bin \
-    GO111MODULE=on
-ENV PATH=${GOBIN}:${PATH}
-
-# Preseed PXF env (if this file exists post-install; harmless otherwise)
-RUN sed -i 's|^#\?export JAVA_HOME=.*|export JAVA_HOME=/usr/lib/jvm/java-11-openjdk|' /usr/local/pxf/conf/pxf-env-default || true
-
-RUN set -euxo pipefail; \
-    test -x "$PG_CONFIG" || (echo "[ERROR] pg_config not found at $PG_CONFIG"; ls -l /usr/local/cloudberry-db/bin || true; exit 1); \
-    cd /tmp/pxf; \
-    mkdir -p "${GOBIN}"; \
-    make -j"$(nproc)" GOPATH="${GOPATH}" GOBIN="${GOBIN}" GRADLE_ARGS="-x test -Dfile.encoding=UTF-8"; \
-    make install GPHOME="${GPHOME}" PXF_HOME="${PXF_HOME}" GOPATH="${GOPATH}" GOBIN="${GOBIN}" GRADLE_ARGS="-x test -Dfile.encoding=UTF-8"; \
-    test -x "${PXF_HOME}/bin/pxf" || (echo "[ERROR] pxf binary missing in ${PXF_HOME}/bin"; ls -l "${PXF_HOME}/bin" || true; exit 2); \
-    if [ -d "${GPHOME}/lib/postgresql" ] || [ -d "${GPHOME}/lib64/postgresql" ]; then \
-    echo "[INFO] Found GP extension dir under ${GPHOME}/lib(64)/postgresql"; \
-    else \
-    echo "[ERROR] Neither ${GPHOME}/lib/postgresql nor ${GPHOME}/lib64/postgresql exists"; \
-    ls -l "${GPHOME}/lib" || true; ls -l "${GPHOME}/lib64" || true; exit 2; \
-    fi; \
-    mkdir -p "${PXF_BASE}"; \
-    chown -R gpadmin:gpadmin "${PXF_HOME}" "${PXF_BASE}"
-
-RUN mkdir -p /usr/java && ln -sfn /usr/lib/jvm/java-11-openjdk /usr/java/default
-
-# =========================
-# pgvector
-# =========================
-RUN set -eux; \
-    cd /tmp; \
-    git clone --depth=1 --branch v0.8.0 https://github.com/pgvector/pgvector.git; \
-    cd pgvector; \
-    make -j"$(nproc)"; \
-    make install
 
 # =========================
 # Defaults / runtime

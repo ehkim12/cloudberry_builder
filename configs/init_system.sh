@@ -62,8 +62,14 @@ for f in /usr/local/cloudberry-db/greenplum_path.sh; do
 done
 export COORDINATOR_DATA_DIRECTORY=/data0/database/coordinator/gpseg-1
 
+
+export ETCD_HOST=localhost   
+export ETCD_PORT=2379  
+
+
 # Initialize single node Cloudberry cluster
 if [[ $MULTINODE == "false" && $HOSTNAME == "cdw" ]]; then
+COORDINATOR_DATA_DIRECTORY=/data0/database/coordinator/gpseg-1
     gpinitsystem -a \
                  -c /tmp/gpinitsystem_singlenode \
                  -h /tmp/gpdb-hosts \
