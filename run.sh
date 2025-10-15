@@ -2,7 +2,7 @@
 set -eu
 
 # Default values
-DEFAULT_OS_VERSION="rockylinux9.6"
+DEFAULT_OS_VERSION="rockylinux9"
 DEFAULT_TIMEZONE_VAR="Asia/Seoul"
 DEFAULT_PIP_INDEX_URL_VAR="https://pypi.org/simple"
 BUILD_ONLY="false"

@@ -1,16 +1,36 @@
+version: "3.9"
+
 services:
   cbdb-coordinator:
     container_name: cbdb-cdw
     image: cbdb-${CODEBASE_VERSION}:${OS_VERSION}
-    ports:
-      - "15432:5432"
     hostname: cdw
     tty: true
+    ports:
+      - "15432:5432"
     networks:
       interconnect:
         ipv4_address: 10.5.0.10
+        aliases: [ cdw ]
+    extra_hosts:
+      - "cdw:10.5.0.10"
+      - "scdw:10.5.0.11"
+      - "sdw1:10.5.0.12"
+      - "sdw2:10.5.0.13"
+      - "etcd1:10.5.0.21"
+      - "etcd2:10.5.0.22"
+      - "etcd3:10.5.0.23"
     environment:
       MULTINODE: "true"
+      # 필요 시 IPv4 강제 접속용 (선택)
+      # PGHOSTADDR: "10.5.0.10"
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"
+      net.ipv6.conf.default.disable_ipv6: "1"
+    restart: unless-stopped
+    tmpfs:
+      - /data0:rw,size=1g,uid=1000,gid=1000,mode=0775
+
   cbdb-standby-coordinator:
     container_name: cbdb-scdw
     image: cbdb-${CODEBASE_VERSION}:${OS_VERSION}
@@ -19,6 +39,22 @@ services:
     networks:
       interconnect:
         ipv4_address: 10.5.0.11
+        aliases: [ scdw ]
+    extra_hosts:
+      - "cdw:10.5.0.10"
+      - "scdw:10.5.0.11"
+      - "sdw1:10.5.0.12"
+      - "sdw2:10.5.0.13"
+      - "etcd1:10.5.0.21"
+      - "etcd2:10.5.0.22"
+      - "etcd3:10.5.0.23"
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"
+      net.ipv6.conf.default.disable_ipv6: "1"
+    restart: unless-stopped
+    tmpfs:
+      - /data0:rw,size=1g,uid=1000,gid=1000,mode=0775
+
   cbdb-segment-host-1:
     container_name: cbdb-sdw1
     image: cbdb-${CODEBASE_VERSION}:${OS_VERSION}
@@ -27,6 +63,22 @@ services:
     networks:
       interconnect:
         ipv4_address: 10.5.0.12
+        aliases: [ sdw1 ]
+    extra_hosts:
+      - "cdw:10.5.0.10"
+      - "scdw:10.5.0.11"
+      - "sdw1:10.5.0.12"
+      - "sdw2:10.5.0.13"
+      - "etcd1:10.5.0.21"
+      - "etcd2:10.5.0.22"
+      - "etcd3:10.5.0.23"
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"
+      net.ipv6.conf.default.disable_ipv6: "1"
+    restart: unless-stopped
+    tmpfs:
+      - /data0:rw,size=1g,uid=1000,gid=1000,mode=0775
+
   cbdb-segment-host-2:
     container_name: cbdb-sdw2
     image: cbdb-${CODEBASE_VERSION}:${OS_VERSION}
@@ -35,10 +87,68 @@ services:
     networks:
       interconnect:
         ipv4_address: 10.5.0.13
+        aliases: [ sdw2 ]
+    extra_hosts:
+      - "cdw:10.5.0.10"
+      - "scdw:10.5.0.11"
+      - "sdw1:10.5.0.12"
+      - "sdw2:10.5.0.13"
+      - "etcd1:10.5.0.21"
+      - "etcd2:10.5.0.22"
+      - "etcd3:10.5.0.23"
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"
+      net.ipv6.conf.default.disable_ipv6: "1"
+    restart: unless-stopped
+    tmpfs:
+      - /data0:rw,size=1g,uid=1000,gid=1000,mode=0775
+
+  etcd1: &etcd
+    image: cbdb-${CODEBASE_VERSION}:${OS_VERSION}
+    container_name: cbdb-etcd1
+    hostname: etcd1
+    command: bash -c /tmp/init_etcd.sh
+    networks:
+      interconnect:
+        ipv4_address: 10.5.0.21
+    environment:
+      ETCD_INITIAL_CLUSTER: etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      ETCD_INITIAL_CLUSTER_STATE: new
+      ETCD_INITIAL_CLUSTER_TOKEN: tutorial
+    extra_hosts:
+      - "cdw:10.5.0.10"
+      - "scdw:10.5.0.11"
+      - "sdw1:10.5.0.12"
+      - "sdw2:10.5.0.13"
+      - "etcd1:10.5.0.21"
+      - "etcd2:10.5.0.22"
+      - "etcd3:10.5.0.23"
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"
+      net.ipv6.conf.default.disable_ipv6: "1"
+    restart: unless-stopped
+
+  etcd2:
+    <<: *etcd
+    container_name: cbdb-etcd2
+    hostname: etcd2
+    networks:
+      interconnect:
+        ipv4_address: 10.5.0.22
+
+  etcd3:
+    <<: *etcd
+    container_name: cbdb-etcd3
+    hostname: etcd3
+    networks:
+      interconnect:
+        ipv4_address: 10.5.0.23
+
 networks:
   interconnect:
     name: cbdb-interconnect
     driver: bridge
+    enable_ipv6: false # ★ 네트워크 레벨 IPv6 비활성화
     ipam:
       config:
         - subnet: 10.5.0.0/16

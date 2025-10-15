@@ -1,7 +1,6 @@
 #!/bin/bash
 ## ======================================================================
 ## Container initialization script
-MULTINODE_HOSTS_FILE="/tmp/multinode-gpinit-hosts"
 ## ======================================================================
 
 # ----------------------------------------------------------------------
@@ -15,6 +14,7 @@ if ! sudo /usr/sbin/sshd; then
     echo "Failed to start SSH daemon" >&2
     exit 1
 fi
+
 
 # ----------------------------------------------------------------------
 # Remove /run/nologin to allow logins
@@ -30,7 +30,25 @@ sudo chown -R gpadmin.gpadmin /usr/local/cloudberry-db \
                               /tmp/gpinitsystem_singlenode \
                               /tmp/gpinitsystem_multinode \
                               /tmp/gpdb-hosts \
-                              /tmp/multinode-gpinit-hosts 
+                              /tmp/multinode-gpinit-hosts \
+                              /tmp/faa.tar.gz \
+                              /tmp/gp_bash_functions.sh \
+                              /tmp/gpinitsystem \
+                              /tmp/gpstop \
+                              /tmp/gpstart \
+                              /tmp/mainUtils.py \
+                              /tmp/smoke-test.sh
+
+
+cp /tmp/gpinitsystem /usr/local/cloudberry-db/bin/gpinitsystem
+
+cp /tmp/gpstop /usr/local/cloudberry-db/bin/gpstop
+
+cp /tmp/gpstart /usr/local/cloudberry-db/bin/gpstart
+
+cp /tmp/gp_bash_functions.sh /usr/local/cloudberry-db/bin/lib/gp_bash_functions.sh
+
+cp /tmp/mainUtils.py /usr/local/cloudberry-db/lib/python/gppylib/mainUtils.py
 
 # ----------------------------------------------------------------------
 # Configure passwordless SSH access for 'gpadmin' user
@@ -53,46 +71,81 @@ chmod 600 /home/gpadmin/.ssh/authorized_keys
 ssh-keyscan -t rsa cdw > /home/gpadmin/.ssh/known_hosts 2>/dev/null
 
 # Source Cloudberry environment variables and set
-for f in /usr/local/cloudberry-db/greenplum_path.sh; do
-    if [ -f "$f" ]; then
-        . "$f"
-        echo "source $f"                >> /home/gpadmin/.bashrc
-        break
-    fi
-done
+# COORDINATOR_DATA_DIRECTORY
+source /usr/local/cloudberry-db/greenplum_path.sh
 export COORDINATOR_DATA_DIRECTORY=/data0/database/coordinator/gpseg-1
 
+export PGPORT=5432
+echo 'export PGPORT=5432' >> ~/.bashrc
+source ~/.bashrc
 
-export ETCD_HOST=localhost   
-export ETCD_PORT=2379  
+mkdir -p /data0/database/coordinator /data0/database/primary /data0/database/mirror && \
+        chown -R gpadmin:gpadmin /data0
+
+# Set ownership of entire CloudBerry DB installation directory to gpadmin
+sudo chown -R gpadmin:gpadmin /usr/local/cloudberry-db &&
+sudo chmod 755 /usr/local/cloudberry-db/bin/* &&
+ls -l /usr/local/cloudberry-db/bin/gpinitsystem
 
 
 # Initialize single node Cloudberry cluster
 if [[ $MULTINODE == "false" && $HOSTNAME == "cdw" ]]; then
-COORDINATOR_DATA_DIRECTORY=/data0/database/coordinator/gpseg-1
     gpinitsystem -a \
                  -c /tmp/gpinitsystem_singlenode \
                  -h /tmp/gpdb-hosts \
                  --max_connections=100
 # Initialize multi node Cloudberry cluster
 elif [[ $MULTINODE == "true" && $HOSTNAME == "cdw" ]]; then
-    # Dynamically copy SSH key to all segment hosts listed in multinode-gpinit-hosts
-    if [ -f "$MULTINODE_HOSTS_FILE" ]; then
-          while IFS= read -r host; do
-               sshpass -p "cbdb@123" ssh-copy-id -o StrictHostKeyChecking=no "$host"
-          done < "$MULTINODE_HOSTS_FILE"
-    fi
-     # Also copy to standby coordinator if needed
+    sshpass -p "cbdb@123" ssh-copy-id -o StrictHostKeyChecking=no sdw1
+    sshpass -p "cbdb@123" ssh-copy-id -o StrictHostKeyChecking=no sdw2
     sshpass -p "cbdb@123" ssh-copy-id -o StrictHostKeyChecking=no scdw
-    gpinitsystem -a \
-                 -c /tmp/gpinitsystem_multinode \
-                 -h /tmp/multinode-gpinit-hosts \
-                 --max_connections=100
+    sshpass -p "cbdb@123" ssh-copy-id -o StrictHostKeyChecking=no etcd1
+    sshpass -p "cbdb@123" ssh-copy-id -o StrictHostKeyChecking=no etcd2
+    sshpass -p "cbdb@123" ssh-copy-id -o StrictHostKeyChecking=no etcd3
+
+    # Prevent automatic FTS startup on segment hosts
+   export SKIP_FTS_CHECK=1
+   
+   gpinitsystem -a \
+                -c /tmp/gpinitsystem_multinode \
+                -h /tmp/multinode-gpinit-hosts \
+                --max_connections=100 \
+                -E /tmp/etcd_service.conf \
+                -F /tmp/gpdb_all_hosts \
+                -p /tmp/cbdb_etcd.conf \
+                -U 1
+
+
+    gpconfig -c hot_standby -v on
+    gpconfig -c wal_level -v replica
+    gpconfig -c max_wal_senders -v 16
+
+    
     gpinitstandby -s scdw -a
-     # Optionally, append all segment hosts to /tmp/gpdb-hosts
-     if [ -f "$MULTINODE_HOSTS_FILE" ]; then
-          cat "$MULTINODE_HOSTS_FILE" >> /tmp/gpdb-hosts
-     fi
+    printf "sdw1\nsdw2\n" >> /tmp/gpdb-hosts
+    
+    # Kill any FTS processes on segment hosts first
+    echo "Cleaning up FTS processes on segment hosts..."
+    gpssh -f /tmp/multinode-gpinit-hosts -e "pkill -f gpfts" || true
+    
+    # Start FTS only on coordinator (cdw) - not on other hosts
+    if [ "$HOSTNAME" == "cdw" ]; then
+        echo "Starting FTS only on coordinator (cdw)..."
+        mkdir -p /home/gpadmin/gpAdminLogs/fts
+        nohup $GPHOME/bin/gpfts -F /tmp/cbdb_etcd.conf -d /home/gpadmin/gpAdminLogs/fts > /home/gpadmin/gpAdminLogs/fts/gpfts.log 2>&1 &
+        sleep 5
+        echo "FTS started on cdw"
+    fi
+
+    gpstate
+
+elif [[ $HOSTNAME == "scdw" ]]; then
+    sshpass -p "cbdb@123" ssh-copy-id -o StrictHostKeyChecking=no sdw1
+    sshpass -p "cbdb@123" ssh-copy-id -o StrictHostKeyChecking=no sdw2
+    sshpass -p "cbdb@123" ssh-copy-id -o StrictHostKeyChecking=no cdw
+    sshpass -p "cbdb@123" ssh-copy-id -o StrictHostKeyChecking=no etcd1
+    sshpass -p "cbdb@123" ssh-copy-id -o StrictHostKeyChecking=no etcd2
+    sshpass -p "cbdb@123" ssh-copy-id -o StrictHostKeyChecking=no etcd3
 fi
 
 if [ $HOSTNAME == "cdw" ]; then
@@ -131,10 +184,29 @@ EOF
      psql -P pager=off -d template1 -c "SELECT VERSION()"
      psql -P pager=off -d template1 -c "SELECT * FROM gp_segment_configuration ORDER BY dbid"
      psql -P pager=off -d template1 -c "SHOW optimizer"
-     pxf cluster prepare
-     pxf cluster start
-     pxf cluster status
 fi
+
+cat > ~/.pgpass <<EOF
+localhost:5432:*:gpadmin:cbdb@123
+127.0.0.1:5432:*:gpadmin:cbdb@123
+cdw:5432:*:gpadmin:cbdb@123
+scdw:5432:*:gpadmin:cbdb@123
+sdw1:5432:*:gpadmin:cbdb@123
+sdw2:5432:*:gpadmin:cbdb@123
+EOF
+
+chmod 600 ~/.pgpass
+
+
+if [ $HOSTNAME == "cdw" ]; then
+    gpconfig -c gp_fts_probe_timeout -v 20 --coordinatoronly
+    psql -d postgres -c "SELECT gp_request_fts_probe_scan();"
+    #sleep 60
+    #mkdir -p /home/gpadmin/gpAdminLogs/fts && nohup $GPHOME/bin/gpfts -F /tmp/cbdb_etcd.conf -d /home/gpadmin/gpAdminLogs/fts > /home/gpadmin/gpAdminLogs/fts/gpfts.log 2>&1 &
+fi
+
+
+
 
 echo """
 ===========================

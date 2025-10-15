@@ -1,179 +1,170 @@
-# =========================
-# Base
-# =========================
 FROM rockylinux/rockylinux:9
 
-ARG TIMEZONE_VAR="Asia/Seoul"
-ARG CB_REF="2.0.0-incubating-rc3"   # pin Cloudberry version/tag; can be a commit SHA
-ARG XERCES_VER=3.3.0
+ARG CODEBASE_VERSION_VAR=${CODEBASE_VERSION_VAR}
+ARG TIMEZONE_VAR="Asia/Shanghai"
+# One ARG, one default value
+ARG CB_REF=2.0.0-incubating-rc3
 
-LABEL org.opencontainers.image.title="Cloudberry Builder"
-LABEL org.opencontainers.image.source="https://github.com/apache/cloudberry"
-LABEL org.opencontainers.image.version="${CB_REF}"
+ENV container=docker
+ENV MULTINODE=false
 
-ENV container=docker \
-    MULTINODE=false
+RUN dnf update -y && \
+        dnf install -y systemd \
+        systemd-libs && \
+        dnf clean all
 
-# Keep systemd minimal but functional
-RUN set -eux; \
-    dnf -y update; \
-    dnf -y install systemd systemd-libs; \
-    dnf -y clean all; rm -rf /var/cache/dnf
+# Clean up unnecessary systemd units
+RUN [ -d /lib/systemd/system/sysinit.target.wants ] && find /lib/systemd/system/sysinit.target.wants/ -type l -not -name 'systemd-tmpfiles-setup.service' -delete || echo "Directory /lib/systemd/system/sysinit.target.wants does not exist" && \
+        [ -d /lib/systemd/system/multi-user.target.wants ] && find /lib/systemd/system/multi-user.target.wants/ -type l -delete || echo "Directory /lib/systemd/system/multi-user.target.wants does not exist" && \
+        find /etc/systemd/system/*.wants/ -type l -delete || echo "Directory /etc/systemd/system/*.wants does not exist" && \
+        [ -d /lib/systemd/system/local-fs.target.wants ] && find /lib/systemd/system/local-fs.target.wants/ -type l -delete || echo "Directory /lib/systemd/system/local-fs.target.wants does not exist" && \
+        [ -d /lib/systemd/system/sockets.target.wants ] && find /lib/systemd/system/sockets.target.wants/ -type l -not -name '*udev*' -delete || echo "Directory /lib/systemd/system/sockets.target.wants does not exist" && \
+        [ -d /lib/systemd/system/basic.target.wants ] && find /lib/systemd/system/basic.target.wants/ -type l -delete || echo "Directory /lib/systemd/system/basic.target.wants does not exist" && \
+        [ -d /lib/systemd/system/anaconda.target.wants ] && find /lib/systemd/system/anaconda.target.wants/ -type l -delete || echo "Directory /lib/systemd/system/anaconda.target.wants does not exist"
 
-# Prune unwanted systemd units
-RUN set -eux; \
-    [ -d /lib/systemd/system/sysinit.target.wants ] && \
-    find /lib/systemd/system/sysinit.target.wants/ -type l -not -name 'systemd-tmpfiles-setup.service' -delete || true; \
-    [ -d /lib/systemd/system/multi-user.target.wants ] && \
-    find /lib/systemd/system/multi-user.target.wants/ -type l -delete || true; \
-    find /etc/systemd/system/*.wants/ -type l -delete || true; \
-    [ -d /lib/systemd/system/local-fs.target.wants ] && \
-    find /lib/systemd/system/local-fs.target.wants/ -type l -delete || true; \
-    [ -d /lib/systemd/system/sockets.target.wants ] && \
-    find /lib/systemd/system/sockets.target.wants/ -type l -not -name '*udev*' -delete || true; \
-    [ -d /lib/systemd/system/basic.target.wants ] && \
-    find /lib/systemd/system/basic.target.wants/ -type l -delete || true; \
-    [ -d /lib/systemd/system/anaconda.target.wants ] && \
-    find /lib/systemd/system/anaconda.target.wants/ -type l -delete || true
-
-# Bring in compose file + configs used later
-COPY docker-compose.yml ./
 COPY ./configs/* /tmp/
 
-# Generate multinode host list (exclude cdw/scdw)
-RUN awk '/hostname:/ {print $2}' docker-compose.yml | grep -v -E '^(cdw|scdw)$' > /tmp/multinode-gpinit-hosts || true
+RUN     echo root:cbdb@123 | chpasswd && \
+        dnf makecache && \
+        dnf install -y yum-utils \
+        epel-release \
+        git && \
+        yum-config-manager --disable epel-cisco-openh264 && \
+        dnf makecache && \
+        yum-config-manager --disable epel && \
+        dnf install -y --enablerepo=epel \
+        the_silver_searcher \
+        bat \
+        htop && \
+        dnf install -y bison \
+        cmake3 \
+        ed \
+        flex \
+        gcc \
+        gcc-c++ \
+        glibc-langpack-en \
+        go \
+        initscripts \
+        iproute \
+        less \
+        m4 \
+        net-tools \
+        openssh-clients \
+        openssh-server \
+        passwd \
+        perl \
+        rsync \
+        sudo \
+        tar \
+        unzip \
+        util-linux-ng \
+        wget \
+        sshpass \
+        which && \
+        dnf install -y apr-devel \
+        bzip2-devel \
+        krb5-devel \
+        libcurl-devel \
+        libevent-devel \
+        libxml2-devel \
+        libzstd-devel \
+        openldap-devel \
+        openssl-devel \
+        pam-devel \
+        perl-ExtUtils-Embed \
+        perl-Test-Simple \
+        perl-core \
+        python3-devel \
+        readline-devel \
+        zlib-devel && \
+        dnf install -y --enablerepo=crb \
+        libuv-devel \
+        libyaml-devel \
+        perl-IPC-Run && \
+        dnf install -y --enablerepo=epel \
+        xerces-c-devel \ 
+        lz4-devel
 
-# =========================
-# Repos & base toolchain
-# =========================
-# Enable EPEL + CRB; prep metadata; (optionally force baseurls — see block below)
-RUN set -eux; \
-    dnf -y install dnf-plugins-core ca-certificates; update-ca-trust; \
-    dnf -y install epel-release; \
-    dnf config-manager --set-enabled crb; \
-    dnf -y clean all; rm -rf /var/cache/dnf; dnf -y --refresh makecache
+# CRB 활성화 + EPEL 설치 + jansson-devel 설치
+RUN dnf -y install dnf-plugins-core && \
+        dnf config-manager --set-enabled crb && \
+        dnf -y install epel-release && \
+        dnf -y install jansson jansson-devel pkgconf-pkg-config && \
+        dnf clean all
+
+RUN     cp /tmp/90-cbdb-sysctl.conf /etc/sysctl.conf && \
+        cp /tmp/90-cbdb-limits.conf /etc/security/limits.d/90-cbdb-limits.conf && \
+        cat /usr/share/zoneinfo/${TIMEZONE_VAR} > /etc/localtime && \
+        echo "cdw" > /tmp/gpdb-hosts && \
+        echo "/usr/local/lib" >> /etc/ld.so.conf && \
+        echo "/usr/local/lib64" >> /etc/ld.so.conf && \
+        ldconfig && \
+        chmod 777 /tmp/gpinitsystem_singlenode && \
+        chmod 777 /tmp/init_system.sh && \
+        hostname > ~/orig_hostname && \
+        /usr/sbin/groupadd gpadmin && \
+        /usr/sbin/useradd  gpadmin -g gpadmin -G wheel && \
+        setcap cap_net_raw+ep /usr/bin/ping && \
+        echo "cbdb@123"|passwd --stdin gpadmin && \
+        echo "gpadmin        ALL=(ALL)       NOPASSWD: ALL" >> /etc/sudoers && \
+        echo "root           ALL=(ALL)       NOPASSWD: ALL" >> /etc/sudoers && \
+        echo "export COORDINATOR_DATA_DIRECTORY=/data0/database/coordinator/gpseg-1" >> /home/gpadmin/.bashrc && \
+        echo "source /usr/local/cloudberry-db/greenplum_path.sh"                >> /home/gpadmin/.bashrc && \
+        mkdir -p /data0/database/coordinator /data0/database/primary /data0/database/mirror && \
+        chown -R gpadmin:gpadmin /data0 && \
+        ssh-keygen -A && \
+        echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config && \
+        echo "CFLAGS='-O3 -ftree-vectorize -Wno-suggest-attribute=format -Wno-missing-prototypes -Wno-error=cast-function-type'" >> /home/gpadmin/.bashrc && \
+        echo "CXXFLAGS='-O3 -ftree-vectorize -Wno-suggest-attribute=format -Wno-error'" >> /home/gpadmin/.bashrc && \
+        echo "export GOPATH=$HOME/go"  >> /home/gpadmin/.bashrc && \
+        echo "export PATH=\$PATH:\$GOPATH/bin" >> /home/gpadmin/.bashrc
+
+RUN cd /tmp; \
+        git clone --depth=1 --branch "${CB_REF}" https://github.com/apache/cloudberry.git cloudberry; \
+        cd cloudberry; \
+        git submodule update --init --recursive --depth=1
 
 
-# Dev toolchain & libraries (consolidated, no duplicates; cmake3 -> cmake)
-RUN set -eux; \
-    dnf -y groupinstall "Development Tools"; \
-    dnf -y --allowerasing install \
-    sudo git golang rsync wget which curl \
-    iproute net-tools openssh-server \
-    glibc-langpack-en sshpass \
-    gcc gcc-c++ make cmake bison flex pkgconfig diffutils \
-    perl perl-Env perl-ExtUtils-Embed perl-Test-Simple perl-devel \
-    python3 python3-pip python3-devel \
-    openssl openssl-devel \
-    krb5-libs krb5-devel \
-    pam pam-devel \
-    openldap openldap-devel \
-    readline readline-devel \
-    zlib zlib-devel \
-    lz4 lz4-devel \
-    libzstd libzstd-devel \
-    libxml2 libxml2-devel \
-    libicu libicu-devel \
-    libevent libevent-devel \
-    libcurl-devel \
-    libuuid libuuid-devel \
-    apr-devel \
-    bzip2 bzip2-devel \
-    libuv-devel libyaml-devel perl-IPC-Run protobuf-devel \
-    java-11-openjdk-devel \
-    ; \
-    dnf -y clean all; rm -rf /var/cache/dnf
+RUN     cd /tmp/ && \
+        git clone https://github.com/apache/cloudberry-gpbackup.git
 
-# =========================
-# Xerces-C (needed by Cloudberry)
-# =========================
-RUN set -eux; \
-    cd /tmp; \
-    curl -fsSL "https://archive.apache.org/dist/xerces/c/3/sources/xerces-c-${XERCES_VER}.tar.gz" -o xerces-c.tgz; \
-    tar xzf xerces-c.tgz; \
-    cmake -S "xerces-c-${XERCES_VER}" -B build-xerces \
-    -DCMAKE_INSTALL_PREFIX=/usr/local \
-    -DCMAKE_INSTALL_LIBDIR=lib64 \
-    -DBUILD_SHARED_LIBS=ON; \
-    cmake --build build-xerces -j"$(nproc)"; \
-    cmake --install build-xerces; \
-    ldconfig; \
-    test -r /usr/local/include/xercesc/sax2/DefaultHandler.hpp; \
-    test -r /usr/local/include/xercesc/util/XMLString.hpp; \
-    test -r /usr/local/lib64/libxerces-c.so
+RUN     cd /tmp/cloudberry && \
+        ./configure --prefix=/usr/local/cloudberry-db \
+        --enable-external-fts \
+        --enable-ic-proxy                 \
+        --enable-openssl-redirect         \
+        --enable-mapreduce                \
+        --enable-orafce                   \
+        --enable-orca                     \
+        --enable-pxf                      \
+        --enable-tap-tests                \
+        --with-gssapi                     \
+        --with-ldap                       \
+        --with-libxml                     \
+        --with-lz4                        \
+        --with-openssl                    \
+        --with-pam                        \
+        --with-perl                       \
+        --with-pgport=5432                \
+        --with-python                     \
+        --with-pythonsrc-ext              \
+        --with-ssl=openssl 
 
-# =========================
-# System prep & gpadmin
-# =========================
-RUN set -eux; \
-    cp /tmp/cbdb-sysctl.conf /etc/sysctl.conf; \
-    cp /tmp/cbdb-limits.conf /etc/security/limits.d/cbdb-limits.conf; \
-    cat "/usr/share/zoneinfo/${TIMEZONE_VAR}" > /etc/localtime; \
-    echo "cdw" > /tmp/gpdb-hosts; \
-    { echo "/usr/local/lib"; echo "/usr/local/lib64"; } >> /etc/ld.so.conf; \
-    ldconfig; \
-    chmod 755 /tmp/gpinitsystem_singlenode /tmp/init_system.sh || true; \
-    hostname > /root/orig_hostname; \
-    groupadd -r gpadmin; useradd -m -g gpadmin -G wheel gpadmin; \
-    setcap cap_net_raw+ep /usr/bin/ping; \
-    echo "cbdb@123" | passwd --stdin gpadmin; \
-    echo "gpadmin ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers; \
-    echo "root    ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers; \
-    echo "export COORDINATOR_DATA_DIRECTORY=/data0/database/coordinator/gpseg-1" >> /home/gpadmin/.bashrc; \
-    mkdir -p /data0/database/coordinator /data0/database/primary /data0/database/mirror; \
-    chown -R gpadmin:gpadmin /data0; \
-    ssh-keygen -A; \
-    echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
+RUN     cd /tmp/cloudberry && \
+        make -j$(nproc) && \
+        make install
 
-# =========================
-# Build Cloudberry 
-# =========================
-# Note: we use shallow clone + pinned ref; submodules shallow as well
-RUN set -eux; \
-    cd /tmp; \
-    git clone --depth=1 --branch "${CB_REF}" https://github.com/apache/cloudberry.git cloudberry; \
-    cd cloudberry; \
-    git submodule update --init --recursive --depth=1
+RUN     cd /tmp/cloudberry/contrib && \
+        make -j$(nproc) && \
+        make install
 
-# Safer ENV (no undefined var warnings)
-ENV CC=/usr/bin/cc \
-    CXX=/usr/bin/g++ \
-    CFLAGS="-O3 -ftree-vectorize -Wno-suggest-attribute=format -Wno-missing-prototypes -Wno-error=cast-function-type" \
-    CXXFLAGS="-O3 -ftree-vectorize -Wno-suggest-attribute=format -Wno-error" \
-    LDFLAGS="-static-libgcc" \
-    PERL=perl \
-    PYTHON=python3 \
-    LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} \
-    PATH=/usr/local/bin:${PATH}
+RUN     source /home/gpadmin/.bashrc && \
+        cd /tmp/cloudberry-gpbackup && \
+        make depend && \
+        make build && \
+        cp $HOME/go/bin/* /usr/local/cloudberry-db/bin
 
-# Configure (fixes -ldld -> -ldl) + common options
-RUN set -eux; \
-    cd /tmp/cloudberry; \
-    sed -i 's/-ldld/-ldl/g' configure; \
-    ./configure --prefix=/usr/local/cloudberry-db \
-    --enable-pxf \
-    --enable-debug-extensions \
-    --enable-ic-proxy \
-    --enable-openssl-redirect \
-    --enable-orca \
-    --enable-pax \
-    --with-gssapi --with-icu --with-ldap --with-libxml --with-lz4 \
-    --with-openssl --with-pam --with-perl --with-pgport=5432 \
-    --with-python --with-pythonsrc-ext --with-ssl=openssl \
-    --with-includes=/usr/local/include \
-    --with-libraries=/usr/local/lib64
 
-# Build all (pax_storage clean as you had)
-RUN set -eux; \
-    cd /tmp/cloudberry/contrib/pax_storage && rm -rf build || true; \
-    cd /tmp/cloudberry; \
-    make -j"$(nproc)"; \
-    make install
-
-RUN set -eux; \
-    cd /tmp/cloudberry/contrib; \
-    make -j"$(nproc)"; \
-    make install
 
 RUN set -eux; \
     cd /tmp/cloudberry/gpcontrib; \
@@ -258,14 +249,36 @@ RUN set -eux; \
     make -j"$(nproc)"; \
     make install
 
-# =========================
-# Defaults / runtime
-# =========================
+
+COPY ./script/prepare.sh /tmp/prepare.sh
+COPY ./script/install.sh /tmp/install.sh
+
+RUN     chmod 777 /tmp/prepare.sh
+RUN     chmod 777 /tmp/install.sh
+RUN     bash -x /tmp/prepare.sh
+
+RUN     chown -R gpadmin:gpadmin /tmp
+
+RUN sudo chown -R gpadmin:gpadmin /tmp/init_etcd.sh
+RUN sudo chmod +x /tmp/init_etcd.sh
+
+
+# ----------------------------------------------------------------------
+# Set the Default User and Command
+# ----------------------------------------------------------------------
+# The default user is set to 'gpadmin', and the container starts by
+# running the init_system.sh script. This container serves as a base
+# environment, and the Apache Cloudberry RPM can be installed for
+# testing and functional verification.
+# ----------------------------------------------------------------------
 USER gpadmin
 ENV USER=gpadmin
 WORKDIR /home/gpadmin
 
-EXPOSE 5432 22
-VOLUME ["/sys/fs/cgroup"]
+ENV BASHRCSOURCED=1
+RUN /tmp/install.sh
 
+EXPOSE 5432 22 5888
+
+VOLUME [ "/sys/fs/cgroup" ]
 CMD ["bash","-c","/tmp/init_system.sh"]
